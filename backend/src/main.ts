@@ -2,26 +2,37 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS for frontend and allow Authorization headers
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
+
+  const frontendUrl =
+    process.env.FRONTEND_URL || 'http://localhost:5173';
+
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: frontendUrl.split(',').map((url) => url.trim()),
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-  // Global validation pipe
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(
+    new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+  );
 
-  // API prefix
   app.setGlobalPrefix('api');
-  console.log('AppModule loaded');
-  // Swagger documentation
+
   const config = new DocumentBuilder()
     .setTitle('Nostic Ongole API')
     .setDescription(
@@ -33,6 +44,7 @@ async function bootstrap() {
     .addTag('Flavors', 'Flavor management endpoints')
     .addTag('Orders', 'Order management endpoints')
     .addTag('Inventory', 'Inventory management endpoints')
+    .addTag('Payments', 'PhonePe payment endpoints')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       'Authorization',
@@ -45,12 +57,9 @@ async function bootstrap() {
     },
   });
 
-  await app.listen(process.env.PORT || 3000);
-  console.log(
-    `🍦 Server running on http://localhost:${process.env.PORT || 3000}`,
-  );
-  console.log(
-    `📚 API Docs: http://localhost:${process.env.PORT || 3000}/api/docs`,
-  );
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+  console.log(`🍦 Server running on port ${port}`);
+  console.log(`📚 API Docs: /api/docs`);
 }
 bootstrap();

@@ -37,4 +37,28 @@ export class UsersService {
       },
     });
   }
+
+  async recordFailedLogin(userId: string) {
+    const user = await this.findById(userId);
+    if (!user) return;
+
+    const attempts = Number(user.failedLoginAttempts ?? 0) + 1;
+    user.failedLoginAttempts = attempts;
+
+    if (attempts >= 5) {
+      user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      user.failedLoginAttempts = 0;
+    }
+
+    await this.usersRepository.save(user);
+  }
+
+  async resetLockout(userId: string) {
+    const user = await this.findById(userId);
+    if (!user) return;
+
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = undefined;
+    await this.usersRepository.save(user);
+  }
 }

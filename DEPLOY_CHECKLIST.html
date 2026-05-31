@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nostic Ogl — Live Deploy Checklist</title>
+  <style>
+    :root {
+      --bg: #f4fbfc;
+      --surface: #ffffff;
+      --text: #334155;
+      --heading: #12343b;
+      --accent: #0ea5b7;
+      --accent-light: rgba(14, 165, 183, 0.12);
+      --border: #d7e7ea;
+      --success: #059669;
+      --warning: #d97706;
+      --muted: #64748b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--text);
+      background: linear-gradient(135deg, #f4fbfc 0%, #eefcf5 50%, #f4fbfc 100%);
+    }
+
+    .page { max-width: 980px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+    header {
+      background: linear-gradient(135deg, #0ea5b7, #63d471);
+      color: #fff;
+      padding: 2rem;
+      border-radius: 16px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 10px 30px rgba(14, 165, 183, 0.25);
+    }
+
+    header h1 { margin: 0 0 0.35rem; font-size: 1.75rem; }
+    header p { margin: 0; opacity: 0.95; }
+
+    .meta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.5rem;
+      font-size: 0.9rem;
+      margin-top: 1rem;
+      opacity: 0.95;
+    }
+
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+
+    section.current {
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-light);
+    }
+
+    section.done { border-left: 4px solid var(--success); }
+
+    h2 {
+      color: var(--heading);
+      font-size: 1.25rem;
+      margin: 0 0 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    h3 { color: var(--heading); font-size: 1.05rem; margin: 1.25rem 0 0.5rem; }
+    h3:first-of-type { margin-top: 0; }
+    p { margin: 0.6rem 0; }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.55rem;
+      border-radius: 999px;
+    }
+
+    .badge-done { background: #d1fae5; color: #065f46; }
+    .badge-current { background: #fef3c7; color: #92400e; }
+    .badge-pending { background: #e2e8f0; color: #475569; }
+    .badge-skip { background: #f1f5f9; color: var(--muted); }
+
+    .progress-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--heading);
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-bar {
+      height: 10px;
+      background: #e2e8f0;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #63d471);
+      border-radius: 999px;
+      transition: width 0.3s;
+    }
+
+    .log {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-size: 0.88rem;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .log-entry { margin: 0.35rem 0; padding-left: 0.5rem; border-left: 3px solid var(--accent); }
+    .log-entry.done { border-left-color: var(--success); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.75rem 0;
+      font-size: 0.92rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.55rem 0.75rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: var(--accent-light); color: var(--heading); font-weight: 600; }
+    tr:nth-child(even) td { background: #fafcfd; }
+
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 1rem 1.15rem;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      line-height: 1.55;
+      margin: 0.75rem 0;
+      position: relative;
+    }
+
+    pre .comment { color: #94a3b8; }
+
+    code {
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 0.88em;
+      background: var(--accent-light);
+      color: #0f766e;
+      padding: 0.12em 0.35em;
+      border-radius: 4px;
+    }
+
+    pre code { background: none; color: inherit; padding: 0; }
+
+    ol, ul { margin: 0.5rem 0; padding-left: 1.4rem; }
+    li { margin: 0.3rem 0; }
+
+    .checklist { list-style: none; padding-left: 0; }
+    .checklist li { padding: 0.35rem 0 0.35rem 1.6rem; position: relative; }
+    .checklist li::before { position: absolute; left: 0; font-weight: bold; }
+    .checklist li.done::before { content: "✅"; }
+    .checklist li.todo::before { content: "☐"; color: var(--accent); }
+    .checklist li.current::before { content: "▶"; color: var(--warning); }
+
+    .note {
+      background: var(--accent-light);
+      border-left: 4px solid var(--accent);
+      padding: 0.75rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin: 0.75rem 0;
+      font-size: 0.92rem;
+    }
+
+    .warn {
+      background: #fffbeb;
+      border-left: 4px solid var(--warning);
+      padding: 0.75rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin: 0.75rem 0;
+      font-size: 0.92rem;
+    }
+
+    .fill-blank {
+      background: #fef9c3;
+      padding: 0.1em 0.4em;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.9em;
+    }
+
+    .nav-links {
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 2rem;
+    }
+
+    @media print {
+      body { background: #fff; }
+      section { break-inside: avoid; box-shadow: none; }
+      header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Nostic Ogl — Live Deploy Checklist</h1>
+      <p>Full procedure with commands · Updated after each action · Phase 1 free tier (May 2026)</p>
+      <div class="meta-bar">
+        <span><strong>Last updated:</strong> 31 May 2026, session 1</span>
+        <span><strong>Repo:</strong> <a href="https://github.com/sailandsaga29/nostic-ogl" style="color:#fff;text-decoration:underline">sailandsaga29/nostic-ogl</a></span>
+        <span><strong>Strategy:</strong> Railway + Vercel default URLs first · Cloudflare when domain ready</span>
+      </div>
+    </header>
+
+    <p class="nav-links">Also see: <a href="DEPLOYMENT.html">DEPLOYMENT.html</a> (architecture &amp; costs) · <a href="DEPLOY_CHECKLIST.md">DEPLOY_CHECKLIST.md</a> (markdown copy)</p>
+
+    <div class="progress-wrap">
+      <div class="progress-label">
+        <span>Overall progress</span>
+        <span id="progress-text">2 / 10 steps</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:20%"></div></div>
+    </div>
+
+    <section id="activity-log">
+      <h2>Activity log</h2>
+      <div class="log">
+        <div class="log-entry done"><strong>31 May 2026</strong> — Verified backend production build (<code>npm run build</code> in <code>backend/</code>) — passed</div>
+        <div class="log-entry done"><strong>31 May 2026</strong> — Verified frontend production build (<code>npm run build</code> in <code>frontend/</code>) — passed</div>
+        <div class="log-entry done"><strong>31 May 2026</strong> — Generated JWT secrets locally (<code>openssl rand -base64 64</code> × 2) — ready for Railway</div>
+        <div class="log-entry done"><strong>31 May 2026</strong> — Created deploy configs: <code>railway.toml</code>, <code>vercel.json</code>, <code>.env.example</code> files</div>
+        <div class="log-entry done"><strong>31 May 2026</strong> — Created this live checklist HTML (full procedure + commands)</div>
+        <div class="log-entry"><strong>Next</strong> — Push latest code to GitHub, then create Supabase project</div>
+      </div>
+    </section>
+
+    <!-- STEP 0 -->
+    <section id="step-0" class="done">
+      <h2><span class="badge badge-done">Done</span> Step 0 — Pre-flight (local machine)</h2>
+      <ul class="checklist">
+        <li class="done">Backend builds successfully</li>
+        <li class="done">Frontend builds successfully</li>
+        <li class="done">Deploy config files present (<code>backend/railway.toml</code>, <code>frontend/vercel.json</code>)</li>
+      </ul>
+
+      <h3>Commands run (Git Bash / terminal)</h3>
+      <pre><code><span class="comment"># From project root</span>
+cd backend
+npm run build
+
+cd ../frontend
+npm run build</code></pre>
+      <p class="note">Both builds completed with exit code 0 on 31 May 2026.</p>
+    </section>
+
+    <!-- STEP 0b - Git push -->
+    <section id="step-0b" class="current">
+      <h2><span class="badge badge-current">Current</span> Step 0b — Push code to GitHub</h2>
+      <p>Railway and Vercel deploy from GitHub. Uncommitted changes must be pushed before connecting services.</p>
+
+      <ul class="checklist">
+        <li class="todo">Review changed files</li>
+        <li class="todo">Stage all deploy-ready files (never <code>.env</code> with secrets)</li>
+        <li class="todo">Commit with descriptive message</li>
+        <li class="todo">Push to <code>origin/master</code></li>
+      </ul>
+
+      <h3>Commands (Git Bash — from project root)</h3>
+      <pre><code>cd "c:/Users/Admin/Desktop/Icecream/ice-cream-franchise/Nostic Ogl"
+
+<span class="comment"># Review what will be committed</span>
+git status
+git diff --stat
+
+<span class="comment"># Stage files (excludes backend/.env — should stay gitignored)</span>
+git add DEPLOYMENT.html DEPLOYMENT.md DEPLOY_CHECKLIST.html DEPLOY_CHECKLIST.md
+git add backend/.env.example backend/railway.toml
+git add backend/package.json backend/package-lock.json
+git add backend/src/
+git add frontend/.env.example frontend/vercel.json frontend/src/
+
+<span class="comment"># Commit</span>
+git commit -m "$(cat &lt;&lt;'EOF'
+Add production security, deploy configs, and live deploy checklist.
+
+EOF
+)"
+
+<span class="comment"># Push to GitHub</span>
+git push origin master</code></pre>
+
+      <div class="warn"><strong>Do not commit:</strong> <code>backend/.env</code>, JWT secrets, or Supabase passwords.</div>
+    </section>
+
+    <!-- STEP 1 -->
+    <section id="step-1">
+      <h2><span class="badge badge-pending">Pending</span> Step 1 — Supabase (PostgreSQL database)</h2>
+
+      <ol>
+        <li>Open <a href="https://supabase.com/dashboard" target="_blank">supabase.com/dashboard</a> → sign up / log in</li>
+        <li><strong>New project</strong> → Name: <code>nostic-ogl</code> · Region: <strong>South Asia (Mumbai)</strong> · Plan: <strong>Free</strong></li>
+        <li>Save the <strong>database password</strong> (shown once)</li>
+        <li>Wait until project status is <strong>Active</strong> (~2 min)</li>
+        <li><strong>Project Settings → Database → Connection string</strong>
+          <ul>
+            <li>Tab: <strong>URI</strong></li>
+            <li>Mode: <strong>Transaction pooler</strong> (port <strong>6543</strong>)</li>
+            <li>Copy string; replace <code>[YOUR-PASSWORD]</code> with your password</li>
+          </ul>
+        </li>
+      </ol>
+
+      <h3>Save your connection string</h3>
+      <p><code>DATABASE_URL</code> = <span class="fill-blank">paste after Step 1 complete</span></p>
+
+      <h3>Test connection locally (optional)</h3>
+      <pre><code>cd backend
+
+<span class="comment"># Windows Git Bash</span>
+export DATABASE_URL="postgresql://postgres.[ref]:[PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+export DB_SSL=true
+
+<span class="comment"># Quick ping — start app briefly (Ctrl+C to stop)</span>
+npm run start:prod</code></pre>
+
+      <p class="note">Use the <strong>pooler</strong> URL (6543), not direct 5432, for Railway/serverless backends.</p>
+    </section>
+
+    <!-- STEP 2 -->
+    <section id="step-2">
+      <h2><span class="badge badge-pending">Pending</span> Step 2 — Railway (backend API)</h2>
+
+      <ol>
+        <li><a href="https://railway.app/new" target="_blank">railway.app</a> → sign up with <strong>GitHub</strong></li>
+        <li><strong>New Project → Deploy from GitHub repo</strong> → select <code>sailandsaga29/nostic-ogl</code></li>
+        <li>Click the service → <strong>Settings → Root Directory</strong> → <code>backend</code></li>
+        <li><strong>Variables</strong> tab → add every variable below</li>
+        <li><strong>Settings → Networking → Generate Domain</strong> → copy URL</li>
+        <li>Wait for deploy → open <code>https://YOUR-RAILWAY-URL/api/docs</code></li>
+      </ol>
+
+      <h3>Railway environment variables</h3>
+      <table>
+        <thead><tr><th>Variable</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td><code>NODE_ENV</code></td><td><code>production</code></td></tr>
+          <tr><td><code>PORT</code></td><td><code>3000</code></td></tr>
+          <tr><td><code>DATABASE_URL</code></td><td>From Step 1 (Supabase pooler URI)</td></tr>
+          <tr><td><code>DB_SSL</code></td><td><code>true</code></td></tr>
+          <tr><td><code>DB_SYNCHRONIZE</code></td><td><code>true</code> <em>(first deploy only — set <code>false</code> after Step 5)</em></td></tr>
+          <tr><td><code>JWT_SECRET</code></td><td>See Step 2b below (generated 31 May 2026)</td></tr>
+          <tr><td><code>JWT_REFRESH_SECRET</code></td><td>See Step 2b below</td></tr>
+          <tr><td><code>JWT_EXPIRATION</code></td><td><code>15m</code></td></tr>
+          <tr><td><code>JWT_REFRESH_EXPIRATION</code></td><td><code>7d</code></td></tr>
+          <tr><td><code>FRONTEND_URL</code></td><td>Vercel URL from Step 3 (update after Vercel deploy)</td></tr>
+          <tr><td><code>PHONEPE_MOCK_MODE</code></td><td><code>true</code></td></tr>
+        </tbody>
+      </table>
+
+      <p><strong>Railway API URL:</strong> <span class="fill-blank">paste after deploy</span></p>
+
+      <h3>Railway CLI alternative (optional)</h3>
+      <pre><code><span class="comment"># Install CLI (one time)</span>
+npm install -g @railway/cli
+
+<span class="comment"># Login and link project</span>
+railway login
+cd backend
+railway link
+railway up</code></pre>
+    </section>
+
+    <!-- STEP 2b -->
+    <section id="step-2b">
+      <h2><span class="badge badge-done">Ready</span> Step 2b — JWT secrets (generated)</h2>
+      <p>Paste these into Railway <strong>Variables</strong> only. Store in a password manager. Never commit to git.</p>
+
+      <h3>Generated 31 May 2026</h3>
+      <pre><code>JWT_SECRET=LFMJffoJQQG7QemzpYepMhI8fwdCTiDFYcyZ/abTDGm4omjRQd+eo2J7GgHZwk31bkVLo+N3ShlENdG06BEeMg==
+JWT_REFRESH_SECRET=WGTfu7g3Au72CHvMMLvEpJLaT7pLNNkY31/EODNSrRV7lRlVGQlWeui7Vs6vyXwR0UeuAWSLvdRQXHAQQggpcw==</code></pre>
+
+      <h3>Regenerate if needed</h3>
+      <pre><code>openssl rand -base64 64
+openssl rand -base64 64</code></pre>
+    </section>
+
+    <!-- STEP 3 -->
+    <section id="step-3">
+      <h2><span class="badge badge-pending">Pending</span> Step 3 — Vercel (frontend)</h2>
+
+      <ol>
+        <li><a href="https://vercel.com/new" target="_blank">vercel.com</a> → sign up with <strong>GitHub</strong></li>
+        <li><strong>Add New → Project</strong> → import <code>sailandsaga29/nostic-ogl</code></li>
+        <li><strong>Root Directory</strong> → <code>frontend</code></li>
+        <li>Framework: <strong>Vite</strong> · Build: <code>npm run build</code> · Output: <code>dist</code></li>
+        <li><strong>Environment Variables</strong> (Production):</li>
+      </ol>
+
+      <table>
+        <thead><tr><th>Variable</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td><code>VITE_API_URL</code></td><td><code>https://YOUR-RAILWAY-URL/api</code> (no trailing slash)</td></tr>
+        </tbody>
+      </table>
+
+      <ol start="6">
+        <li>Deploy → copy site URL</li>
+        <li>Go to <strong>Railway → Variables</strong> → set <code>FRONTEND_URL</code> to Vercel URL → redeploy backend</li>
+      </ol>
+
+      <p><strong>Vercel site URL:</strong> <span class="fill-blank">paste after deploy</span></p>
+
+      <h3>Vercel CLI alternative (optional)</h3>
+      <pre><code>npm install -g vercel
+cd frontend
+vercel login
+vercel --prod
+
+<span class="comment"># Set env via dashboard or:</span>
+vercel env add VITE_API_URL production</code></pre>
+    </section>
+
+    <!-- STEP 4 -->
+    <section id="step-4">
+      <h2><span class="badge badge-skip">Optional</span> Step 4 — Cloudflare (custom domain)</h2>
+      <p>Skip until you own a domain. Use Railway + Vercel default URLs for Phase 1.</p>
+
+      <table>
+        <thead><tr><th>Type</th><th>Name</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>CNAME</td><td><code>@</code></td><td>Vercel (<code>cname.vercel-dns.com</code>)</td></tr>
+          <tr><td>CNAME</td><td><code>www</code></td><td>Vercel</td></tr>
+          <tr><td>CNAME</td><td><code>api</code></td><td>Railway hostname</td></tr>
+        </tbody>
+      </table>
+
+      <p>Then update: <code>FRONTEND_URL</code>, <code>VITE_API_URL</code>, Vercel custom domain, Railway custom domain.</p>
+      <ul class="checklist">
+        <li class="todo">Domain added to Cloudflare</li>
+        <li class="todo">DNS records configured</li>
+        <li class="todo">SSL: Full (strict) + Always HTTPS</li>
+      </ul>
+    </section>
+
+    <!-- STEP 5 -->
+    <section id="step-5">
+      <h2><span class="badge badge-pending">Pending</span> Step 5 — Seed production database (once)</h2>
+      <p>Run after first successful Railway deploy with <code>DB_SYNCHRONIZE=true</code>.</p>
+
+      <h3>Option A — From your PC (recommended)</h3>
+      <pre><code>cd "c:/Users/Admin/Desktop/Icecream/ice-cream-franchise/Nostic Ogl/backend"
+
+export DATABASE_URL="postgresql://postgres.[ref]:[PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+export DB_SSL=true
+
+npm run seed</code></pre>
+
+      <h3>Option B — Railway shell</h3>
+      <pre><code><span class="comment"># In Railway dashboard: Service → Shell</span>
+npm run seed</code></pre>
+
+      <h3>After seed succeeds</h3>
+      <ol>
+        <li>Railway → Variables → set <code>DB_SYNCHRONIZE=false</code></li>
+        <li>Redeploy backend</li>
+      </ol>
+
+      <h3>Default login credentials (change after first login)</h3>
+      <table>
+        <thead><tr><th>Role</th><th>Email</th><th>Password</th></tr></thead>
+        <tbody>
+          <tr><td>Admin</td><td><code>admin@nosticogl.com</code></td><td><code>Admin@123</code></td></tr>
+          <tr><td>Manager</td><td><code>manager@nosticogl.com</code></td><td><code>Manager@123</code></td></tr>
+          <tr><td>Staff</td><td><code>staff@nosticogl.com</code></td><td><code>Staff@123</code></td></tr>
+        </tbody>
+      </table>
+
+      <ul class="checklist">
+        <li class="todo">Seed completed</li>
+        <li class="todo"><code>DB_SYNCHRONIZE=false</code> on Railway</li>
+        <li class="todo">Backend redeployed</li>
+      </ul>
+    </section>
+
+    <!-- STEP 6 -->
+    <section id="step-6">
+      <h2><span class="badge badge-pending">Pending</span> Step 6 — Go-live verification</h2>
+
+      <ul class="checklist">
+        <li class="todo">Vercel URL loads login page</li>
+        <li class="todo"><code>https://YOUR-RAILWAY-URL/api/docs</code> opens Swagger</li>
+        <li class="todo">Admin login (<code>admin@nosticogl.com</code>)</li>
+        <li class="todo">Staff POS loads flavors</li>
+        <li class="todo">Mock PhonePe payment flow works</li>
+        <li class="todo">Calendar reminder: review usage <strong>1 June 2026</strong></li>
+      </ul>
+
+      <h3>Quick API smoke test (curl)</h3>
+      <pre><code><span class="comment"># Replace with your Railway URL</span>
+curl -s -o /dev/null -w "%{http_code}" https://YOUR-RAILWAY-URL/api/docs
+
+<span class="comment"># Login test</span>
+curl -X POST https://YOUR-RAILWAY-URL/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@nosticogl.com","password":"Admin@123"}'</code></pre>
+    </section>
+
+    <!-- Troubleshooting -->
+    <section id="troubleshooting">
+      <h2>Troubleshooting</h2>
+      <table>
+        <thead><tr><th>Issue</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td>CORS error on login</td><td><code>FRONTEND_URL</code> on Railway must exactly match Vercel URL (<code>https://</code>, no trailing slash)</td></tr>
+          <tr><td>DB connection failed</td><td>Use Supabase <strong>pooler</strong> URL (port 6543), <code>DB_SSL=true</code></td></tr>
+          <tr><td>502 on Railway</td><td>Check deploy logs; confirm <code>PORT=3000</code></td></tr>
+          <tr><td>Empty flavors / no users</td><td>Run seed (Step 5)</td></tr>
+          <tr><td>Tables missing</td><td>Set <code>DB_SYNCHRONIZE=true</code>, redeploy, seed, then <code>false</code></td></tr>
+          <tr><td>Railway healthcheck fails</td><td>Ensure <code>/api/docs</code> is reachable (see <code>backend/railway.toml</code>)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Quick reference -->
+    <section id="quick-ref">
+      <h2>Quick reference — all URLs to fill in</h2>
+      <table>
+        <thead><tr><th>Item</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>GitHub repo</td><td><a href="https://github.com/sailandsaga29/nostic-ogl">github.com/sailandsaga29/nostic-ogl</a></td></tr>
+          <tr><td>Supabase DATABASE_URL</td><td><span class="fill-blank">pending</span></td></tr>
+          <tr><td>Railway API URL</td><td><span class="fill-blank">pending</span></td></tr>
+          <tr><td>Vercel frontend URL</td><td><span class="fill-blank">pending</span></td></tr>
+          <tr><td>Custom domain</td><td><span class="fill-blank">optional later</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      Live checklist · Last updated 31 May 2026 · Progress: 2/10 steps · Next: push to GitHub → Supabase
+    </footer>
+  </div>
+</body>
+</html>

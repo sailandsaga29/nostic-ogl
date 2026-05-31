@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entity';
@@ -14,25 +16,63 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { InventoryTransaction } from './modules/inventory/entities/inventory-transaction.entity';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { Payment } from './modules/payments/entities/payment.entity';
+import { RefreshToken } from './auth/entities/refresh-token.entity';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+
+const entities = [
+  User,
+  RefreshToken,
+  Flavor,
+  FlavorMonthly,
+  Order,
+  OrderItem,
+  InventoryTransaction,
+  Payment,
+];
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get('DB_HOST'),
-        port: configService.get('DB_PORT'),
-        username: configService.get('DB_USERNAME'),
-        password: configService.get('DB_PASSWORD'),
-        database: configService.get('DB_NAME'),
-        entities: [User, Flavor, FlavorMonthly, Order, OrderItem, InventoryTransaction, Payment],
-        synchronize: true, // Set to false in production!
-      }),
+      useFactory: (configService: ConfigService) => {
+        const synchronize =
+          configService.get<string>('DB_SYNCHRONIZE', 'false') === 'true';
+        const databaseUrl = configService.get<string>('DATABASE_URL');
+
+        if (databaseUrl) {
+          return {
+            type: 'postgres' as const,
+            url: databaseUrl,
+            ssl:
+              configService.get<string>('DB_SSL', 'true') === 'true'
+                ? { rejectUnauthorized: false }
+                : false,
+            entities,
+            synchronize,
+          };
+        }
+
+        return {
+          type: 'postgres' as const,
+          host: configService.get<string>('DB_HOST'),
+          port: Number(configService.get('DB_PORT') ?? 5432),
+          username: configService.get<string>('DB_USERNAME'),
+          password: configService.get<string>('DB_PASSWORD'),
+          database: configService.get<string>('DB_NAME'),
+          entities,
+          synchronize,
+        };
+      },
     }),
     AuthModule,
     UsersModule,
@@ -43,6 +83,12 @@ import { AppService } from './app.service';
   ],
 
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

@@ -1,11 +1,4 @@
-import axios from 'axios';
-
-const API = axios.create({
-  baseURL: 'http://localhost:3000/api',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+import api from './api';
 
 export interface LoginPayload {
   email: string;
@@ -15,22 +8,22 @@ export interface LoginPayload {
 export interface LoginResponse {
   accessToken: string;
   refreshToken?: string;
-
   user: {
     id: string;
     name: string;
     email: string;
     role: 'super_admin' | 'admin' | 'manager' | 'staff';
+    branchCode?: string;
   };
 }
 
 export const loginApi = async (
-  payload: LoginPayload
+  payload: LoginPayload,
 ): Promise<LoginResponse> => {
-  const response = await API.post<LoginResponse>(
-    '/auth/login',
-    payload
-  );
-
+  const response = await api.post<LoginResponse>('/auth/login', payload);
   return response.data;
+};
+
+export const logoutApi = async (refreshToken: string) => {
+  await api.post('/auth/logout', { refreshToken });
 };

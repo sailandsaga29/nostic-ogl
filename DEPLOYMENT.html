@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nostic Ogl — Production Deployment &amp; Quotation</title>
+  <style>
+    :root {
+      --bg: #f4fbfc;
+      --surface: #ffffff;
+      --text: #334155;
+      --heading: #12343b;
+      --accent: #0ea5b7;
+      --accent-light: rgba(14, 165, 183, 0.12);
+      --border: #d7e7ea;
+      --success: #059669;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--text);
+      background: linear-gradient(135deg, #f4fbfc 0%, #eefcf5 50%, #f4fbfc 100%);
+    }
+
+    .page {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+
+    header {
+      background: linear-gradient(135deg, #0ea5b7, #63d471);
+      color: #fff;
+      padding: 2.5rem 2rem;
+      border-radius: 16px;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 30px rgba(14, 165, 183, 0.25);
+    }
+
+    header h1 {
+      margin: 0 0 0.5rem;
+      font-size: 1.85rem;
+      font-weight: 700;
+    }
+
+    header p {
+      margin: 0;
+      opacity: 0.95;
+      font-size: 1rem;
+    }
+
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+
+    h2 {
+      color: var(--heading);
+      font-size: 1.35rem;
+      margin: 0 0 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--accent-light);
+    }
+
+    h3 {
+      color: var(--heading);
+      font-size: 1.1rem;
+      margin: 1.5rem 0 0.75rem;
+    }
+
+    h3:first-of-type { margin-top: 0; }
+
+    p { margin: 0.75rem 0; }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--accent-light);
+      color: var(--heading);
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) td { background: #fafcfd; }
+
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 1rem 1.25rem;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 0.88em;
+      background: var(--accent-light);
+      color: #0f766e;
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+    }
+
+    .diagram {
+      background: #f8fafc;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      font-family: monospace;
+      font-size: 0.9rem;
+      white-space: pre;
+      line-height: 1.7;
+    }
+
+    ul, ol {
+      margin: 0.5rem 0 1rem;
+      padding-left: 1.5rem;
+    }
+
+    li { margin: 0.35rem 0; }
+
+    .checklist {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .checklist li {
+      padding: 0.4rem 0 0.4rem 1.75rem;
+      position: relative;
+    }
+
+    .checklist li::before {
+      content: "☐";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    .highlight {
+      background: linear-gradient(90deg, rgba(14, 165, 183, 0.15), rgba(99, 212, 113, 0.15));
+      border-left: 4px solid var(--accent);
+      padding: 1rem 1.25rem;
+      border-radius: 0 10px 10px 0;
+      margin: 1rem 0;
+      font-weight: 600;
+      color: var(--heading);
+    }
+
+    .status-yes { color: var(--success); font-weight: 600; }
+
+    .current-month {
+      border: 2px solid var(--accent);
+      background: linear-gradient(180deg, #ffffff 0%, #f0fbfd 100%);
+    }
+
+    .month-badge {
+      display: inline-block;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      margin-bottom: 0.75rem;
+    }
+
+    .cost-free {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--success);
+      margin: 0.5rem 0 1rem;
+    }
+
+    .phase-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+
+    .phase-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+      background: #fafcfd;
+    }
+
+    .phase-card.active {
+      border-color: var(--accent);
+      background: var(--accent-light);
+    }
+
+    .phase-card h4 {
+      margin: 0 0 0.35rem;
+      color: var(--heading);
+      font-size: 0.95rem;
+    }
+
+    .phase-card p {
+      margin: 0;
+      font-size: 0.88rem;
+      color: #64748b;
+    }
+
+    .phase-card .price {
+      margin-top: 0.5rem;
+      font-weight: 700;
+      color: var(--heading);
+    }
+
+    footer {
+      text-align: center;
+      color: #64748b;
+      font-size: 0.9rem;
+      margin-top: 2rem;
+      font-style: italic;
+    }
+
+    @media print {
+      body { background: #fff; }
+      section { box-shadow: none; break-inside: avoid; }
+      header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Nostic Ogl — Production Deployment &amp; Quotation</h1>
+      <p>Start free this month · Upgrade gradually for long-run · Security built into the app</p>
+    </header>
+
+    <p style="margin:-0.5rem 0 1.5rem;font-size:0.95rem"><strong>Deploy now:</strong> <a href="DEPLOY_CHECKLIST.html">DEPLOY_CHECKLIST.html</a> — live step-by-step procedure with commands (updated after each action)</p>
+
+    <section id="current-month" class="current-month">
+      <span class="month-badge">Current month — May 2026</span>
+      <h2>Phase 1: Launch on free tier (₹0 hosting)</h2>
+      <p class="cost-free">Estimated hosting cost this month: ₹0</p>
+      <p>Deploy the full stack now using free plans. App security (JWT, lockout, rate limits, Helmet) is already in code — free hosting does not reduce that. Upgrade paid plans only when usage or reliability requires it.</p>
+
+      <table>
+        <thead>
+          <tr><th>Service</th><th>Plan (now)</th><th>Cost</th><th>This month — action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Cloudflare</strong></td><td>Free</td><td>₹0</td><td>Point domain DNS; enable SSL Full (strict)</td></tr>
+          <tr><td><strong>Vercel</strong></td><td>Hobby</td><td>₹0</td><td>Deploy <code>frontend/</code>; set <code>VITE_API_URL</code></td></tr>
+          <tr><td><strong>Railway</strong></td><td>Free ($5 credit/mo)</td><td>₹0*</td><td>Deploy <code>backend/</code>; use Railway URL or <code>api.yourdomain.com</code></td></tr>
+          <tr><td><strong>Supabase</strong></td><td>Free (500 MB)</td><td>₹0</td><td>Create project; copy pooler <code>DATABASE_URL</code>; run seed once</td></tr>
+          <tr><td><strong>GitHub</strong></td><td>Free</td><td>₹0</td><td>Repo: <a href="https://github.com/sailandsaga29/nostic-ogl">sailandsaga29/nostic-ogl</a></td></tr>
+          <tr><td><strong>PhonePe</strong></td><td>Mock mode</td><td>₹0</td><td>Keep <code>PHONEPE_MOCK_MODE=true</code> until live credentials ready</td></tr>
+        </tbody>
+      </table>
+      <p><em>*Railway: $5 monthly credit. Enough for light launch/testing. Monitor usage in Railway dashboard.</em></p>
+
+      <h3>May 2026 checklist</h3>
+      <ul class="checklist">
+        <li>Create Supabase free project + Railway + Vercel accounts</li>
+        <li>Connect GitHub repo; deploy backend then frontend</li>
+        <li>Generate production JWT secrets (<code>openssl rand -base64 64</code>)</li>
+        <li>Configure Cloudflare DNS (<code>@</code>, <code>www</code>, <code>api</code>)</li>
+        <li>Run <code>npm run seed</code> once on production DB</li>
+        <li>Test admin login, staff POS, and mock PhonePe flow</li>
+        <li>Set calendar reminder: review usage on <strong>1 June 2026</strong></li>
+      </ul>
+
+      <h3>Upgrade path (when to pay)</h3>
+      <div class="phase-grid">
+        <div class="phase-card active">
+          <h4>May 2026 — Now</h4>
+          <p>All free tiers. Launch &amp; test.</p>
+          <p class="price">₹0 / mo</p>
+        </div>
+        <div class="phase-card">
+          <h4>When POS is daily</h4>
+          <p>Railway usage exceeds free credit or API must never sleep.</p>
+          <p class="price">+₹850–1,700 / mo</p>
+        </div>
+        <div class="phase-card">
+          <h4>When DB &gt; ~400 MB</h4>
+          <p>Or Supabase project pauses on inactivity.</p>
+          <p class="price">Supabase Pro +₹2,100 / mo</p>
+        </div>
+        <div class="phase-card">
+          <h4>Long-run (forever data)</h4>
+          <p>Supabase Pro + Railway Pro + Vercel Pro.</p>
+          <p class="price">~₹5,600–6,700 / mo</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <h2>Architecture</h2>
+      <h3>Phase 1 — May 2026 (free)</h3>
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Service</th><th>Plan</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>DNS + SSL</td><td><strong>Cloudflare</strong></td><td>Free</td></tr>
+          <tr><td>Frontend</td><td><strong>Vercel</strong></td><td>Hobby (free)</td></tr>
+          <tr><td>Backend API</td><td><strong>Railway</strong></td><td>Free ($5 credit)</td></tr>
+          <tr><td>Database</td><td><strong>Supabase</strong></td><td>Free (500 MB)</td></tr>
+          <tr><td>Code</td><td><strong>GitHub</strong></td><td>Free</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Long-run target (renew when ready)</h3>
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Service</th><th>Plan</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>DNS + SSL</td><td><strong>Cloudflare</strong></td><td>Free</td></tr>
+          <tr><td>Frontend</td><td><strong>Vercel</strong></td><td>Pro</td></tr>
+          <tr><td>Backend API</td><td><strong>Railway</strong></td><td>Pro / usage</td></tr>
+          <tr><td>Database</td><td><strong>Supabase</strong></td><td>Pro (8 GB+, backups)</td></tr>
+          <tr><td>Code</td><td><strong>GitHub</strong></td><td>Free</td></tr>
+        </tbody>
+      </table>
+      <div class="diagram">User → Cloudflare DNS → Vercel (React)
+                      → Railway (NestJS /api)
+                              → Supabase Postgres</div>
+    </section>
+
+    <section id="security">
+      <h2>Security implemented in codebase</h2>
+      <table>
+        <thead>
+          <tr><th>Control</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>JWT 15m + refresh 7d with <strong>rotation</strong></td><td class="status-yes">✅</td></tr>
+          <tr><td>Refresh token stored hashed, <strong>revoked on logout</strong></td><td class="status-yes">✅</td></tr>
+          <tr><td>Account <strong>lockout</strong> after 5 failed logins (15 min)</td><td class="status-yes">✅</td></tr>
+          <tr><td><strong>Rate limiting</strong> 10 req/min global; login 5; register 3</td><td class="status-yes">✅</td></tr>
+          <tr><td><strong>bcrypt</strong> 12 rounds</td><td class="status-yes">✅</td></tr>
+          <tr><td><strong>Helmet</strong> security headers</td><td class="status-yes">✅</td></tr>
+          <tr><td><strong>ValidationPipe</strong> strict</td><td class="status-yes">✅</td></tr>
+          <tr><td>CORS → <code>FRONTEND_URL</code> only</td><td class="status-yes">✅</td></tr>
+          <tr><td><strong>30 min inactivity logout</strong> (frontend)</td><td class="status-yes">✅</td></tr>
+          <tr><td>Auto <strong>token refresh</strong> on 401</td><td class="status-yes">✅</td></tr>
+          <tr><td><code>DB_SYNCHRONIZE=false</code> in production</td><td class="status-yes">✅ (via env)</td></tr>
+          <tr><td>HTTPS</td><td class="status-yes">✅ (Vercel + Railway + Cloudflare)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="deployment">
+      <h2>Deployment steps (checklist)</h2>
+
+      <h3>1. Supabase (database) — start free</h3>
+      <ol>
+        <li>Create project at <a href="https://supabase.com">supabase.com</a> → <strong>Free plan</strong> (upgrade to Pro later)</li>
+        <li>Settings → Database → copy <strong>Connection string (URI, pooler)</strong></li>
+        <li>Set <code>DATABASE_URL</code> on Railway</li>
+        <li>First deploy: set <code>DB_SYNCHRONIZE=true</code> once, run app, then set <code>false</code></li>
+        <li>Run seed once: <code>npm run seed</code> (Railway shell or local against prod URL)</li>
+      </ol>
+
+      <h3>2. Railway (backend)</h3>
+      <ol>
+        <li><a href="https://railway.app">railway.app</a> → New Project → Deploy from GitHub</li>
+        <li>Root directory: <strong><code>backend</code></strong></li>
+        <li>Variables (from <code>backend/.env.example</code>):
+          <ul>
+            <li><code>DATABASE_URL</code>, <code>DB_SSL=true</code>, <code>DB_SYNCHRONIZE=false</code></li>
+            <li><code>JWT_SECRET</code>, <code>JWT_REFRESH_SECRET</code> → <code>openssl rand -base64 64</code></li>
+            <li><code>FRONTEND_URL=https://yourdomain.com</code></li>
+            <li>PhonePe production vars</li>
+          </ul>
+        </li>
+        <li>Settings → Networking → Custom domain: <strong><code>api.yourdomain.com</code></strong></li>
+      </ol>
+
+      <h3>3. Vercel (frontend)</h3>
+      <ol>
+        <li><a href="https://vercel.com">vercel.com</a> → Import GitHub repo</li>
+        <li>Root directory: <strong><code>frontend</code></strong></li>
+        <li>Build: <code>npm run build</code> | Output: <strong><code>dist</code></strong></li>
+        <li>Env: <code>VITE_API_URL=https://api.yourdomain.com/api</code></li>
+        <li>Domains → add <strong><code>yourdomain.com</code></strong></li>
+      </ol>
+
+      <h3>4. Cloudflare (DNS)</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Name</th><th>Target</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>CNAME</td><td><code>@</code></td><td>Vercel (cname.vercel-dns.com)</td></tr>
+          <tr><td>CNAME</td><td><code>www</code></td><td>Vercel</td></tr>
+          <tr><td>CNAME</td><td><code>api</code></td><td>Railway provided hostname</td></tr>
+        </tbody>
+      </table>
+      <p>Enable: SSL <strong>Full (strict)</strong>, <strong>Always HTTPS</strong>, basic WAF (free).</p>
+
+      <h3>5. Go-live verification</h3>
+      <ul class="checklist">
+        <li><code>https://yourdomain.com</code> loads login</li>
+        <li><code>https://api.yourdomain.com/api/docs</code> opens Swagger</li>
+        <li>Admin login works</li>
+        <li>Staff POS + order flow</li>
+        <li>PhonePe callback URL reachable (test mode off when ready)</li>
+      </ul>
+    </section>
+
+    <section id="quotation">
+      <h2>Cost quotation</h2>
+
+      <h3>Current month — May 2026 (active plan)</h3>
+      <table>
+        <thead>
+          <tr><th>Service</th><th>Plan</th><th>INR/month</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Cloudflare</td><td>Free</td><td><strong>₹0</strong></td></tr>
+          <tr><td>Vercel</td><td>Hobby</td><td><strong>₹0</strong></td></tr>
+          <tr><td>Railway</td><td>Free ($5 credit)</td><td><strong>₹0</strong></td></tr>
+          <tr><td>Supabase</td><td>Free (500 MB)</td><td><strong>₹0</strong></td></tr>
+          <tr><td>Domain (if already owned)</td><td>—</td><td>₹0 this month*</td></tr>
+          <tr><td colspan="2"><strong>Total hosting — May 2026</strong></td><td><strong>₹0</strong></td></tr>
+        </tbody>
+      </table>
+      <p><em>*Domain renewal ~₹1,200/year amortized to ~₹100/mo when due.</em></p>
+
+      <h3>Long-run quotation (upgrade when ready)</h3>
+      <p><em>Rates approximate; USD ₹85–88. For forever data + always-on POS.</em></p>
+      <table>
+        <thead>
+          <tr><th>Service</th><th>Plan</th><th>USD/mo</th><th>INR/mo (≈)</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Supabase</strong></td><td>Pro</td><td>$25</td><td><strong>₹2,100</strong></td><td>8 GB DB, backups, no pause, forever data</td></tr>
+          <tr><td><strong>Railway</strong></td><td>Pro / usage</td><td>$20–25</td><td><strong>₹1,700–2,200</strong></td><td>Always-on API, no sleep, PhonePe webhooks</td></tr>
+          <tr><td><strong>Vercel</strong></td><td>Pro</td><td>$20</td><td><strong>₹1,700</strong></td><td>Production frontend, team SLA, analytics</td></tr>
+          <tr><td><strong>Cloudflare</strong></td><td>Free</td><td>$0</td><td><strong>₹0</strong></td><td>DNS, SSL, CDN, basic DDoS</td></tr>
+          <tr><td><strong>Domain</strong></td><td>—</td><td>—</td><td><strong>₹100/mo</strong></td><td>~₹1,200/year amortized</td></tr>
+          <tr><td><strong>Cursor Pro</strong> (dev)</td><td>Optional</td><td>$20</td><td><strong>₹1,700</strong></td><td>Build/maintain (not hosting)</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Monthly total</h3>
+      <table>
+        <thead>
+          <tr><th>Tier</th><th>Stack</th><th>INR/month</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Minimum reliable</strong></td><td>Supabase Pro + Railway ~$15 + Vercel Hobby*</td><td><strong>~₹3,500–4,000</strong></td></tr>
+          <tr><td><strong>Recommended (your spec)</strong></td><td>Supabase Pro + Railway Pro + Vercel Pro + CF Free</td><td><strong>~₹5,600–6,700</strong></td></tr>
+          <tr><td><strong>With Cursor Pro</strong></td><td>Above + Cursor</td><td><strong>~₹7,300–8,400</strong></td></tr>
+        </tbody>
+      </table>
+      <p><em>*Vercel Hobby is free but Pro recommended for commercial franchise use (SLA, support, no hobby limits).</em></p>
+
+      <h3>Annual budget (recommended)</h3>
+      <table>
+        <thead>
+          <tr><th>Item</th><th>INR/year</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Hosting (Supabase + Railway + Vercel Pro)</td><td><strong>₹68,000 – 80,000</strong></td></tr>
+          <tr><td>Domain renewal</td><td><strong>₹1,000 – 1,500</strong></td></tr>
+          <tr><td><strong>Total production</strong></td><td><strong>~₹70,000 – 82,000/year</strong> (~₹5,800–6,800/mo)</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Year 1 one-time / optional</h3>
+      <table>
+        <thead>
+          <tr><th>Item</th><th>INR</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PhonePe merchant setup</td><td>As per PhonePe (varies)</td></tr>
+          <tr><td>SSL</td><td>₹0 (included)</td></tr>
+          <tr><td>Migration / seed / launch support</td><td>DIY with this guide</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="free-tier">
+      <h2>Free tier limits — know when to upgrade</h2>
+      <table>
+        <thead>
+          <tr><th>Signal</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Supabase DB &gt; 400 MB or project pauses</td><td>Upgrade to <strong>Supabase Pro</strong></td></tr>
+          <tr><td>Railway credit exhausted / API down</td><td>Add Railway paid usage (~₹850–1,700/mo)</td></tr>
+          <tr><td>Live PhonePe + staff depend on POS 24/7</td><td>Ensure Railway always-on (paid)</td></tr>
+          <tr><td>Commercial franchise / SLA needed</td><td>Upgrade <strong>Vercel Pro</strong></td></tr>
+          <tr><td>Forever data retention (years)</td><td><strong>Supabase Pro</strong> (8 GB, backups)</td></tr>
+        </tbody>
+      </table>
+      <div class="highlight">Strategy: Start at ₹0 in May 2026. Budget ~₹6,000/month for long-run when you renew to Pro tiers.</div>
+    </section>
+
+    <section id="env">
+      <h2>Environment quick reference</h2>
+      <p><strong>Railway (backend):</strong> see <code>backend/.env.example</code></p>
+      <p><strong>Vercel (frontend):</strong> <code>VITE_API_URL=https://api.yourdomain.com/api</code></p>
+      <p>Generate secrets:</p>
+      <pre><code>openssl rand -base64 64</code></pre>
+    </section>
+
+    <section id="maintenance">
+      <h2>Support &amp; maintenance (ongoing)</h2>
+      <table>
+        <thead>
+          <tr><th>Task</th><th>Frequency</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Dependency security updates</td><td>Monthly</td></tr>
+          <tr><td>Supabase backups verify</td><td>Monthly (Pro auto-backup)</td></tr>
+          <tr><td>Review Railway/Vercel usage</td><td>Monthly</td></tr>
+          <tr><td>JWT secret rotation</td><td>Yearly or on incident</td></tr>
+          <tr><td>DB size review</td><td>Quarterly (~1 GB / 10 yrs at 75 orders/day)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      Document version: Phase 1 free (May 2026) → gradual upgrade to Pro stack. Security unchanged at every tier.
+    </footer>
+  </div>
+</body>
+</html>

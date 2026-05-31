@@ -19,6 +19,11 @@ export class FlavorMonthly {
   @Column({ type: 'int' })
   year: number;
 
+  /** Opening stock rolled in from the previous month */
+  @Column({ type: 'float', default: 0 })
+  carryForwarded: number;
+
+  /** New units purchased or added during this month */
   @Column({ type: 'float', default: 0 })
   quantity: number;
 

@@ -7,12 +7,14 @@ import {
   useState,
 } from 'react';
 import { Plus, Eye, EyeOff } from 'lucide-react';
+import { API_BASE_URL } from '../../config/env';
 
 type FlavorItem = {
   id: string;
   name: string;
   category: string;
   description?: string;
+  carryForwarded: number;
   quantity: number;
   price: number;
   revenue: number;
@@ -30,8 +32,7 @@ export default function Flavors() {
   =========================================
   */
 
-  const API_URL =
-    'http://localhost:3000/api/flavors';
+  const API_URL = `${API_BASE_URL}/flavors`;
 
   const token =
     localStorage.getItem('accessToken');
@@ -237,6 +238,7 @@ export default function Flavors() {
           name: item.name,
           category: item.category,
           description: item.description,
+          carryForwarded: 0,
           quantity: item.stock,
           stock: item.stock,
           minStock: item.minStock,
@@ -392,12 +394,14 @@ export default function Flavors() {
           }
 
           const newStock = Number(item.stock || 0) + change;
+          const quantityDelta = change > 0 ? change : 0;
+          const newQuantity = (item.quantity ?? 0) + quantityDelta;
 
           return {
             ...item,
             stock: newStock,
-            quantity: (item.quantity ?? 0) + change,
-            revenue: ((item.quantity ?? 0) + change) * item.price,
+            quantity: newQuantity,
+            revenue: newQuantity * item.price,
           };
         })
       );
@@ -822,6 +826,9 @@ export default function Flavors() {
 
                   <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
                     Quantity
+                  </th>
+
+                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
                     Carry Forwarded
                   </th>
 
@@ -865,6 +872,10 @@ export default function Flavors() {
 
                       <td className="px-6 py-4 text-center text-gray-700">
                         {item.quantity}
+                      </td>
+
+                      <td className="px-6 py-4 text-center text-gray-700">
+                        {isFilteringByMonth ? item.carryForwarded ?? 0 : '—'}
                       </td>
 
                       <td className="px-6 py-4 text-center text-gray-700">
@@ -949,7 +960,7 @@ export default function Flavors() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="text-center py-10 text-gray-500"
                     >
                       {loading ? 'Loading flavors...' : `No flavors found for ${selectedMonth} ${selectedYear}`}

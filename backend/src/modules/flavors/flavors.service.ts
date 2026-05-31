@@ -61,10 +61,89 @@ export class FlavorsService {
       .getMany();
   }
 
+  private previousMonth(year: number, month: number) {
+    if (month === 1) {
+      return { year: year - 1, month: 12 };
+    }
+    return { year, month: month - 1 };
+  }
+
+  private async resolveCarryForwarded(
+    flavorId: string,
+    year: number,
+    month: number,
+  ): Promise<number> {
+    const { year: prevYear, month: prevMonth } = this.previousMonth(year, month);
+    const prev = await this.flavorMonthlyRepo.findOne({
+      where: { flavorId, year: prevYear, month: prevMonth },
+    });
+
+    if (!prev) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      Number(prev.carryForwarded ?? 0) + Number(prev.quantity ?? 0),
+    );
+  }
+
+  private async ensureMonthlyRecord(flavor: Flavor, year: number, month: number) {
+    const existing = await this.flavorMonthlyRepo.findOne({
+      where: { flavorId: flavor.id, year, month },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    const carryForwarded = await this.resolveCarryForwarded(
+      flavor.id,
+      year,
+      month,
+    );
+
+    return this.flavorMonthlyRepo.save(
+      this.flavorMonthlyRepo.create({
+        flavor,
+        flavorId: flavor.id,
+        year,
+        month,
+        carryForwarded,
+        quantity: 0,
+        rate: Number(flavor.price ?? 0),
+        cost: 0,
+        category: flavor.category,
+      }),
+    );
+  }
+
   async adjustStock(id: string, change: number) {
-    const f = await this.findOne(id);
-    f.stock = Number(f.stock) + Number(change);
-    return this.flavorsRepo.save(f);
+    await this.flavorsRepo
+      .createQueryBuilder()
+      .update(Flavor)
+      .set({
+        stock: () => `COALESCE(stock, 0) + ${Number(change)}`,
+      })
+      .where('id = :id', { id })
+      .execute();
+
+    const flavor = await this.findOne(id);
+
+    if (Number(change) > 0) {
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+      const monthly = await this.ensureMonthlyRecord(flavor, year, month);
+
+      monthly.quantity = Number(monthly.quantity ?? 0) + Number(change);
+      monthly.rate = Number(flavor.price ?? monthly.rate ?? 0);
+      monthly.cost = monthly.quantity * monthly.rate;
+      monthly.category = flavor.category;
+      await this.flavorMonthlyRepo.save(monthly);
+    }
+
+    return flavor;
   }
 
   async getAvailableYears() {
@@ -96,22 +175,39 @@ export class FlavorsService {
       relations: { flavor: true },
     });
 
-    // Map to a friendly shape combining flavor base info with monthly metrics
-    return items.map((it) => ({
-      id: it.flavor.id,
-      name: it.flavor.name,
-      category: it.category ?? it.flavor.category,
-      description: it.flavor.description,
-      quantity: it.quantity,
-      stock: it.flavor.stock,
-      minStock: it.flavor.minStock,
-      price: it.rate || it.flavor.price,
-      revenue: (it.rate || it.flavor.price) * (it.quantity || 0),
-      image: it.flavor.image,
-      isActive: it.flavor.isActive,
-      isSeasonal: it.flavor.isSeasonal,
-      month: it.month,
-      year: it.year,
-    }));
+    return Promise.all(
+      items.map(async (it) => {
+        const rate = Number(it.rate || it.flavor.price || 0);
+        const quantity = Number(it.quantity || 0);
+        const carryForwarded = await this.resolveCarryForwarded(
+          it.flavorId,
+          year,
+          month,
+        );
+
+        if (Number(it.carryForwarded ?? 0) !== carryForwarded) {
+          it.carryForwarded = carryForwarded;
+          await this.flavorMonthlyRepo.save(it);
+        }
+
+        return {
+          id: it.flavor.id,
+          name: it.flavor.name,
+          category: it.category ?? it.flavor.category,
+          description: it.flavor.description,
+          carryForwarded,
+          quantity,
+          stock: it.flavor.stock,
+          minStock: it.flavor.minStock,
+          price: rate,
+          revenue: quantity * rate,
+          image: it.flavor.image,
+          isActive: it.flavor.isActive,
+          isSeasonal: it.flavor.isSeasonal,
+          month: it.month,
+          year: it.year,
+        };
+      }),
+    );
   }
 }

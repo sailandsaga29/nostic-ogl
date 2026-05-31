@@ -52,7 +52,7 @@ async function seed() {
       continue;
     }
 
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
+    const hashedPassword = await bcrypt.hash(userData.password, 12);
 
     await usersService.create({
       name: userData.name,
@@ -788,7 +788,7 @@ async function seed() {
       description: flavorData.description,
       price: flavorData.price,
       stock: flavorData.stock,
-      minStock: flavorData.minStock ,
+      minStock: flavorData.minStock,
       image: flavorData.image ?? undefined,
       isActive: flavorData.isActive,
       isSeasonal: flavorData.isSeasonal,
@@ -823,6 +823,9 @@ async function seed() {
         where: { flavorId: f.id, month, year },
       });
       if (existing) {
+        if (existing.carryForwarded == null) {
+          existing.carryForwarded = 0;
+        }
         existing.quantity = quantity;
         existing.rate = rate;
         existing.cost = cost;
@@ -839,6 +842,7 @@ async function seed() {
         flavorId: f.id,
         month,
         year,
+        carryForwarded: 0,
         quantity,
         rate,
         cost,
