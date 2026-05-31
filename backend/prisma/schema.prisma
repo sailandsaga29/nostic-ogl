@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      String
+  createdAt DateTime @default(now())
+}
+
+model Flavor {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  category    String
+  description String?
+  price       Float
+  stock       Float
+  minStock    Float    @default(10)
+  image       String?
+  isActive    Boolean  @default(true)
+  isSeasonal  Boolean  @default(false)
+  popularity  Int      @default(0)
+  reservedQty Float    @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+  FAILED
+}
+
+enum InventoryChangeType {
+  SALE
+  RESTOCK
+  ADJUSTMENT
+  RESERVATION
+  RELEASE
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  status     OrderStatus @default(PENDING)
+  total      Float
+  note       String?
+  items      OrderItem[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  orderId    String
+  order      Order   @relation(fields: [orderId], references: [id])
+  flavorId   String
+  flavor     Flavor  @relation(fields: [flavorId], references: [id])
+  quantity   Float
+  unitPrice  Float
+  totalPrice Float
+}
+
+model InventoryTransaction {
+  id         String              @id @default(cuid())
+  flavorId   String
+  flavor     Flavor              @relation(fields: [flavorId], references: [id])
+  change     Float
+  type       InventoryChangeType
+  reason     String?
+  createdAt  DateTime            @default(now())
+}
