@@ -7,17 +7,10 @@ import {
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
-
+import AdminLayout from './components/Layout/AdminLayout';
 // Auth Pages
 import Login from './pages/Login';
 import Unauthorized from './pages/Unauthorized';
-
-// Admin Pages
-import AdminDashboard from './pages/admin/AdminDashboard';
-import FlavorsPage from './pages/admin/FlavorsPage';
-import InventoryPage from './pages/admin/InventoryPage';
-import OrdersPage from './pages/admin/OrdersPage';
-import Profile from './pages/admin/Profile';
 
 // Manager
 import ManagerDashboard from './pages/manager/ManagerDashboard';
@@ -58,39 +51,12 @@ function AppRoutes() {
         element={<Unauthorized />}
       />
 
-      {/* Admin */}
+      {/* Admin — header + keep-alive pages for instant revisits */}
       <Route
-        path="/admin/dashboard"
+        path="/admin/*"
         element={
           <ProtectedRoute allowedRoles={['super_admin']}>
-            <AdminDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/flavors"
-        element={
-          <ProtectedRoute allowedRoles={['super_admin']}>
-            <FlavorsPage />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/inventory"
-        element={
-          <ProtectedRoute allowedRoles={['super_admin']}>
-            <InventoryPage />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/orders"
-        element={
-          <ProtectedRoute allowedRoles={['super_admin']}>
-            <OrdersPage />
+            <AdminLayout />
           </ProtectedRoute>
         }
       />
@@ -138,15 +104,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/admin/profile"
-        element={
-          <ProtectedRoute allowedRoles={['super_admin']}>
-            <Profile />
-          </ProtectedRoute>
-        }
-      />
-
       <Route
         path="*"
         element={<Navigate to="/" replace />}

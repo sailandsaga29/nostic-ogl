@@ -4,6 +4,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
 import { Flavor } from './entities/flavor.entity';
 import { FlavorMonthly } from './entities/flavor-monthly.entity';
+import { OrderStatus } from '../orders/entities/order.entity';
+import { OrderItem } from '../orders/entities/order-item.entity';
 
 @Injectable()
 export class FlavorsService {
@@ -12,6 +14,8 @@ export class FlavorsService {
     private flavorsRepo: Repository<Flavor>,
     @InjectRepository(FlavorMonthly)
     private flavorMonthlyRepo: Repository<FlavorMonthly>,
+    @InjectRepository(OrderItem)
+    private orderItemRepo: Repository<OrderItem>,
   ) {}
 
   async create(data: Partial<Flavor>) {
@@ -66,6 +70,77 @@ export class FlavorsService {
       return { year: year - 1, month: 12 };
     }
     return { year, month: month - 1 };
+  }
+
+  private currentCalendar() {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  }
+
+  private isFutureMonth(year: number, month: number): boolean {
+    const { year: cy, month: cm } = this.currentCalendar();
+    return year > cy || (year === cy && month > cm);
+  }
+
+  private isCurrentMonth(year: number, month: number): boolean {
+    const { year: cy, month: cm } = this.currentCalendar();
+    return year === cy && month === cm;
+  }
+
+  private monthHadActivity(record: FlavorMonthly, unitsSold: number): boolean {
+    return (
+      Number(record.carryForwarded ?? 0) > 0 ||
+      Number(record.quantity ?? 0) > 0 ||
+      unitsSold > 0
+    );
+  }
+
+  private async getUnitsSoldInMonth(
+    flavorId: string,
+    year: number,
+    month: number,
+  ): Promise<number> {
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+
+    const result = await this.orderItemRepo
+      .createQueryBuilder('oi')
+      .innerJoin('oi.order', 'o')
+      .innerJoin('oi.flavor', 'f')
+      .where('f.id = :flavorId', { flavorId })
+      .andWhere('o.status = :status', { status: OrderStatus.COMPLETED })
+      .andWhere('o.createdAt >= :start', { start })
+      .andWhere('o.createdAt < :end', { end })
+      .select('COALESCE(SUM(oi.quantity), 0)', 'total')
+      .getRawOne<{ total: string }>();
+
+    return Number(result?.total ?? 0);
+  }
+
+  private async monthHasActivityInDb(
+    year: number,
+    month: number,
+  ): Promise<boolean> {
+    const records = await this.flavorMonthlyRepo.find({
+      where: { year, month },
+    });
+
+    if (records.length === 0) {
+      return false;
+    }
+
+    const checks = await Promise.all(
+      records.map(async (record) => {
+        const sold = await this.getUnitsSoldInMonth(
+          record.flavorId,
+          year,
+          month,
+        );
+        return this.monthHadActivity(record, sold);
+      }),
+    );
+
+    return checks.some(Boolean);
   }
 
   private async resolveCarryForwarded(
@@ -170,6 +245,24 @@ export class FlavorsService {
   }
 
   async getMonthlyStats(year: number, month: number) {
+    if (this.isFutureMonth(year, month)) {
+      return [];
+    }
+
+    if (!this.isCurrentMonth(year, month)) {
+      const hasData = await this.monthHasActivityInDb(year, month);
+      if (!hasData) {
+        return [];
+      }
+    } else {
+      const flavors = await this.flavorsRepo.find();
+      await Promise.all(
+        flavors.map((flavor) =>
+          this.ensureMonthlyRecord(flavor, year, month),
+        ),
+      );
+    }
+
     const items = await this.flavorMonthlyRepo.find({
       where: { year, month },
       relations: { flavor: true },

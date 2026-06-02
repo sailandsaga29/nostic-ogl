@@ -9,6 +9,23 @@ import {
 import { Plus, Eye, EyeOff } from 'lucide-react';
 import { API_BASE_URL } from '../../config/env';
 
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
+
+type MonthName = (typeof MONTH_NAMES)[number];
+
 type FlavorItem = {
   id: string;
   name: string;
@@ -90,45 +107,42 @@ export default function Flavors() {
   */
 
   const [selectedMonth, setSelectedMonth] =
-    useState('May');
+    useState<MonthName>(() => MONTH_NAMES[new Date().getMonth()]);
 
   const [selectedYear, setSelectedYear] =
-    useState(2026);
+    useState(() => new Date().getFullYear());
 
   const [
     selectedCategory,
     setSelectedCategory,
   ] = useState('All');
 
-  const months = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
+  const months = MONTH_NAMES;
 
   // Convert month name to number (1-12)
-  const getMonthNumber = (monthName: string): number => {
+  const getMonthNumber = (monthName: MonthName): number => {
     return months.indexOf(monthName) + 1;
   };
 
   // Convert month number to name
-  const getMonthName = (monthNum: number): string => {
-    return months[monthNum - 1] || '';
+  const getMonthName = (monthNum: number): MonthName => {
+    return months[monthNum - 1] ?? MONTH_NAMES[0];
   };
 
-  // Check if current selection has data
-  const hasDataForSelection =
-    availableYears.includes(selectedYear) &&
-    availableMonths.includes(getMonthNumber(selectedMonth));
+  const isFutureMonth = (year: number, monthNum: number): boolean => {
+    const now = new Date();
+    const cy = now.getFullYear();
+    const cm = now.getMonth() + 1;
+    return year > cy || (year === cy && monthNum > cm);
+  };
+
+  const isCurrentMonth = (year: number, monthNum: number): boolean => {
+    const now = new Date();
+    return year === now.getFullYear() && monthNum === now.getMonth() + 1;
+  };
+
+  const selectedMonthNum = getMonthNumber(selectedMonth);
+  const selectedIsFutureMonth = isFutureMonth(selectedYear, selectedMonthNum);
 
   const categories = [
     'All',
@@ -202,10 +216,15 @@ export default function Flavors() {
       const numericMonths = months.map((m: any) => Number(m));
       setAvailableMonths(numericMonths);
 
-      // If current month is not available, set to first available
-      const currentMonthNum = getMonthNumber(selectedMonth);
-      if (numericMonths.length > 0 && !numericMonths.includes(currentMonthNum)) {
-        setSelectedMonth(getMonthName(numericMonths[0]));
+      const now = new Date();
+      const currentMonthNum = now.getMonth() + 1;
+      if (year === now.getFullYear() && numericMonths.includes(currentMonthNum)) {
+        setSelectedMonth(getMonthName(currentMonthNum));
+      } else if (
+        numericMonths.length > 0 &&
+        !numericMonths.includes(getMonthNumber(selectedMonth))
+      ) {
+        setSelectedMonth(getMonthName(numericMonths[numericMonths.length - 1]));
       }
     } catch (err) {
       console.error('Failed to fetch months');
@@ -321,6 +340,13 @@ export default function Flavors() {
     if (!selectedYear) {
       setIsFilteringByMonth(false);
       fetchFlavors();
+      return;
+    }
+
+    if (isFutureMonth(selectedYear, monthNum)) {
+      setIsFilteringByMonth(true);
+      setData([]);
+      setLoading(false);
       return;
     }
 
@@ -480,6 +506,15 @@ export default function Flavors() {
     return filtered;
   }, [selectedCategory, data, sortBy]);
 
+  const showNoDataBanner =
+    !loading && isFilteringByMonth && filteredData.length === 0;
+
+  const emptyTableMessage = loading
+    ? 'Loading flavors...'
+    : selectedIsFutureMonth
+      ? `No data found for ${selectedMonth} ${selectedYear} (future month)`
+      : `No data found for ${selectedMonth} ${selectedYear}`;
+
   return (
     <div className="min-h-screen bg-[#fafafa]">
       <Header />
@@ -509,6 +544,10 @@ export default function Flavors() {
           {months.map((month) => {
             const active =
               selectedMonth === month;
+            const isNow = isCurrentMonth(
+              selectedYear,
+              getMonthNumber(month),
+            );
 
             return (
               <button
@@ -526,6 +565,7 @@ export default function Flavors() {
                 `}
               >
                 {month}
+                {isNow ? ' (now)' : ''}
               </button>
             );
           })}
@@ -803,11 +843,22 @@ export default function Flavors() {
 
         {/* TABLE */}
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-          {/* DATA AVAILABILITY MESSAGE (metadata says no months/years) */}
-          {!hasDataForSelection && data.length === 0 && (
-            <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
-              <p className="text-amber-800 text-sm">
-                <span className="font-semibold">ℹ️ No data available</span> for {selectedMonth} {selectedYear}.
+          {isFilteringByMonth &&
+            filteredData.some((item) => (item.carryForwarded ?? 0) > 0) && (
+              <div className="border-b border-teal-100 bg-teal-50 px-6 py-3">
+                <p className="text-sm text-teal-800">
+                  <span className="font-semibold">Carry forward applied.</span>{' '}
+                  Opening stock for {selectedMonth} {selectedYear} was rolled
+                  automatically from the previous month&apos;s remaining stock.
+                </p>
+              </div>
+            )}
+
+          {/* Empty month — no activity or future month */}
+          {showNoDataBanner && (
+            <div className="border-b border-gray-100 bg-gray-50 px-6 py-4">
+              <p className="text-sm text-gray-600">
+                {emptyTableMessage}
               </p>
             </div>
           )}
@@ -846,7 +897,7 @@ export default function Flavors() {
                   </th>
 
                   <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
-                    Status
+                    Sales Status
                   </th>
 
                   <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
@@ -963,7 +1014,7 @@ export default function Flavors() {
                       colSpan={9}
                       className="text-center py-10 text-gray-500"
                     >
-                      {loading ? 'Loading flavors...' : `No flavors found for ${selectedMonth} ${selectedYear}`}
+                      {emptyTableMessage}
                     </td>
                   </tr>
                 )}

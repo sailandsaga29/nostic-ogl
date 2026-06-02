@@ -1,377 +1,490 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Layout/Header';
-// import Sidebar from '../../components/Layout/Sidebar';
-const salesData = [
-  {
-    title: 'Total Revenue',
-    value: '₹1,24,500',
-    change: '+12%',
-    icon: '💰',
-    color: 'bg-pink-100',
-  },
-  {
-    title: 'Orders Completed',
-    value: '1,245',
-    change: '+8%',
-    icon: '🛒',
-    color: 'bg-purple-100',
-  },
-  {
-    title: 'Top Flavor',
-    value: 'Lotus Biscoff',
-    change: '95% Popularity',
-    icon: '🍨',
-    color: 'bg-yellow-100',
-  },
-  {
-    title: 'Low Stock Items',
-    value: '5',
-    change: '-2%',
-    icon: '⚠️',
-    color: 'bg-red-100',
-  },
-];
+import api from '../../services/api';
+import {getLoginDashboardQuote} from '../../utils/dashboardQuotes';
 
-const recentReports = [
-  {
-    name: 'Weekly Sales Report',
-    date: 'Today',
-    status: 'Completed',
-  },
-  {
-    name: 'Inventory Summary',
-    date: 'Yesterday',
-    status: 'Completed',
-  },
-  {
-    name: 'Monthly Revenue',
-    date: '2 days ago',
-    status: 'Processing',
-  },
-];
+type Order = {
+  id: string;
+  status: string;
+  paymentMethod?: 'CASH' | 'ONLINE';
+  total: number;
+  createdAt: string;
+  items?: { quantity: number; flavor?: { name?: string } }[];
+};
 
+type LowStockFlavor = {
+  id: string;
+  name?: string;
+  stock?: number;
+  minStock?: number;
+};
 
+type MonthlyFlavor = {
+  quantity: number;
+  revenue: number;
+  isActive?: boolean;
+};
+
+const formatCurrency = (value: number) =>
+  `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+const formatDelta = (current: number, previous: number) => {
+  if (previous === 0) {
+    return current > 0 ? '+100%' : '—';
+  }
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0) return 'Same as yesterday';
+  return `${pct > 0 ? '+' : ''}${pct}% vs yesterday`;
+};
+
+const isSameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+
+const isSameMonth = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [lowStock, setLowStock] = useState<LowStockFlavor[]>([]);
+  const [monthlyFlavors, setMonthlyFlavors] = useState<MonthlyFlavor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [quote] = useState(getLoginDashboardQuote);
+
+  const now = new Date();
+  const monthLabel = now.toLocaleDateString('en-IN', {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  useEffect(() => {
+    let mounted = true;
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    const load = async () => {
+      try {
+        const [ordersRes, lowStockRes, monthlyRes] = await Promise.all([
+          api.get('/orders'),
+          api.get('/flavors/low-stock'),
+          api.get(`/flavors/monthly/${year}/${month}`),
+        ]);
+        if (!mounted) return;
+        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
+        setLowStock(Array.isArray(lowStockRes.data) ? lowStockRes.data : []);
+        setMonthlyFlavors(Array.isArray(monthlyRes.data) ? monthlyRes.data : []);
+      } catch {
+        if (mounted) {
+          setOrders([]);
+          setLowStock([]);
+          setMonthlyFlavors([]);
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const insights = useMemo(() => {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const completed = orders.filter((o) => o.status === 'COMPLETED');
+    const todayCompleted = completed.filter((o) =>
+      isSameDay(new Date(o.createdAt), now),
+    );
+    const yesterdayCompleted = completed.filter((o) =>
+      isSameDay(new Date(o.createdAt), yesterday),
+    );
+
+    const todayRevenue = todayCompleted.reduce(
+      (s, o) => s + Number(o.total ?? 0),
+      0,
+    );
+    const yesterdayRevenue = yesterdayCompleted.reduce(
+      (s, o) => s + Number(o.total ?? 0),
+      0,
+    );
+
+    const monthCompleted = completed.filter((o) =>
+      isSameMonth(new Date(o.createdAt), now),
+    );
+    const monthSales = monthCompleted.reduce(
+      (s, o) => s + Number(o.total ?? 0),
+      0,
+    );
+    const monthProcurement = monthlyFlavors.reduce(
+      (s, f) => s + Number(f.revenue ?? 0),
+      0,
+    );
+
+    const pendingOnline = orders.filter(
+      (o) => o.status === 'PENDING' && o.paymentMethod === 'ONLINE',
+    );
+    const pendingCash = orders.filter(
+      (o) => o.status === 'PENDING' && o.paymentMethod !== 'ONLINE',
+    );
+
+    const todayOrders = orders.filter((o) =>
+      isSameDay(new Date(o.createdAt), now),
+    );
+    const todayOnline = todayCompleted.filter(
+      (o) => o.paymentMethod === 'ONLINE',
+    ).length;
+    const todayCash = todayCompleted.length - todayOnline;
+
+    const flavorCounts = new Map<string, number>();
+    for (const order of todayCompleted) {
+      for (const item of order.items ?? []) {
+        const name = item.flavor?.name ?? 'Unknown';
+        flavorCounts.set(
+          name,
+          (flavorCounts.get(name) ?? 0) + Number(item.quantity ?? 0),
+        );
+      }
+    }
+    const topToday = [...flavorCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    const totalRevenueSoFar = completed.reduce(
+      (s, o) => s + Number(o.total ?? 0),
+      0,
+    );
+
+    const inactiveFlavors = monthlyFlavors.filter((f) => f.isActive === false)
+      .length;
+
+    const unitsProcured = monthlyFlavors.reduce(
+      (s, f) => s + Number(f.quantity ?? 0),
+      0,
+    );
+
+    return {
+      todayRevenue,
+      revenueDelta: formatDelta(todayRevenue, yesterdayRevenue),
+      todayOrderCount: todayOrders.length,
+      pendingOnline,
+      pendingCash,
+      lowStock,
+      monthSales,
+      monthProcurement,
+      monthLabel,
+      todayOnline,
+      todayCash,
+      todayCompletedCount: todayCompleted.length,
+      topToday,
+      totalRevenueSoFar,
+      totalCompletedOrders: completed.length,
+      inactiveFlavors,
+      unitsProcured,
+    };
+  }, [orders, lowStock, monthlyFlavors, now]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br to-indigo-50">
+        Loading dashboard…
+      </div>
+    );
+  }
+
+  const paymentTotal = insights.todayOnline + insights.todayCash;
+  const onlinePct =
+    paymentTotal > 0
+      ? Math.round((insights.todayOnline / paymentTotal) * 100)
+      : 0;
+
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-gradient-to-br to-indigo-50 text-gray-800">
-
       <Header />
 
-      <div className="flex flex-col md:flex-row">
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="rounded-[2rem] bg-gradient-to-r from-[#00a8c5] to-[#63d471] p-6 sm:p-8">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-white/80">
+            {now.toLocaleDateString('en-IN', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            })}
+          </p>
+          <blockquote className="mt-4 max-w-3xl border-none p-0">
+            <p className="text-2xl font-semibold leading-snug text-white sm:text-3xl">
+              &ldquo;{quote}&rdquo;
+            </p>
+          </blockquote>
+          <p className="mt-4 text-sm text-white/75 italic">
+            — fresh wisdom, served every login 🍦
+          </p>
+        </div>
 
-        {/* <Sidebar /> */}
-
-        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-          {/* Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-8">
-            {salesData.map((item) => (
-              <div
-                key={item.title}
-                className="bg-white rounded-2xl shadow-sm p-6"
-              >
-                <div
-                  className={`h-14 w-14 rounded-2xl flex items-center justify-center text-2xl mb-4 ${item.color}`}
-                >
-                  {item.icon}
-                </div>
-
-                <h3 className="text-3xl font-bold">
-                  {item.value}
-                </h3>
-
-                <p className="text-gray-500 text-sm mt-1">
-                  {item.title}
-                </p>
-
-                <p className="text-green-500 text-sm mt-3">
-                  {item.change}
-                </p>
-              </div>
-            ))}
+        {/* KPI row — comparative / cross-cutting only */}
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Today&apos;s sales
+            </p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {formatCurrency(insights.todayRevenue)}
+            </p>
+            <p className="mt-1 text-sm text-emerald-600">
+              {insights.revenueDelta}
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              {insights.todayCompletedCount} completed ·{' '}
+              {insights.todayOrderCount} total today
+            </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 mt-8">
-            {/* Create Offer */}
-            <div className="bg-white rounded-3xl p-6 shadow-sm border hover:shadow-md transition cursor-pointer">
-              <div className="h-14 w-14 rounded-2xl bg-pink-100 flex items-center justify-center text-3xl mb-5">
-                🎉
-              </div>
 
-              <h3 className="text-xl font-bold text-gray-800">
-                Launch Offer
-              </h3>
+    
 
-              <p className="text-gray-500 mt-2 text-sm">
-                Create flash discounts & combo deals
-              </p>
 
-              <div className="mt-5 text-pink-500 font-semibold text-sm">
-                Create Promotion →
-              </div>
-            </div>
 
-            {/* Add Flavor */}
-            <div className="bg-white rounded-3xl p-6 shadow-sm border hover:shadow-md transition cursor-pointer">
-              <div className="h-14 w-14 rounded-2xl bg-yellow-100 flex items-center justify-center text-3xl mb-5">
-                🍨
-              </div>
-
-              <h3 className="text-xl font-bold text-gray-800">
-                Add New Flavor
-              </h3>
-
-              <p className="text-gray-500 mt-2 text-sm">
-                Launch seasonal or premium flavors
-              </p>
-
-              <div className="mt-5 text-teal-500 font-semibold text-sm">
-                Open Flavor Lab →
-              </div>
-            </div>
-
-            {/* Restock */}
-            <div className="bg-white rounded-3xl p-6 shadow-sm border hover:shadow-md transition cursor-pointer">
-              <div className="h-14 w-14 rounded-2xl bg-orange-100 flex items-center justify-center text-3xl mb-5">
-                📦
-              </div>
-
-              <h3 className="text-xl font-bold text-gray-800">
-                Restock Inventory
-              </h3>
-
-              <p className="text-gray-500 mt-2 text-sm">
-                5 items currently running low
-              </p>
-
-              <div className="mt-5 text-orange-500 font-semibold text-sm">
-                Manage Stock →
-              </div>
-            </div>
-
-            {/* Staff */}
-            <div className="bg-white rounded-3xl p-6 shadow-sm border hover:shadow-md transition cursor-pointer">
-              <div className="h-14 w-14 rounded-2xl bg-cyan-100 flex items-center justify-center text-3xl mb-5">
-                👥
-              </div>
-
-              <h3 className="text-xl font-bold text-gray-800">
-                Staff Attendance
-              </h3>
-
-              <p className="text-gray-500 mt-2 text-sm">
-                Track shifts and employee activity
-              </p>
-
-              <div className="mt-5 text-cyan-500 font-semibold text-sm">
-                View Attendance →
-              </div>
-            </div>
-
-            {/* Reports */}
-            <div className="bg-white rounded-3xl p-6 shadow-sm border hover:shadow-md transition cursor-pointer">
-              <div className="h-14 w-14 rounded-2xl bg-green-100 flex items-center justify-center text-3xl mb-5">
-                📈
-              </div>
-
-              <h3 className="text-xl font-bold text-gray-800">
-                Generate Reports
-              </h3>
-
-              <p className="text-gray-500 mt-2 text-sm">
-                Export sales & analytics reports
-              </p>
-
-              <div className="mt-5 text-green-500 font-semibold text-sm">
-                Download Reports →
-              </div>
-            </div>
-
-            {/* AI Suggestions */}
-            <div className="bg-white rounded-3xl p-6 shadow-sm border hover:shadow-md transition cursor-pointer">
-              <div className="h-14 w-14 rounded-2xl bg-purple-100 flex items-center justify-center text-3xl mb-5">
-                🤖
-              </div>
-
-              <h3 className="text-xl font-bold text-gray-800">
-                Flavor Trends
-              </h3>
-
-              <p className="text-gray-500 mt-2 text-sm">
-                Discover trending customer favorites
-              </p>
-
-              <div className="mt-5 text-purple-500 font-semibold text-sm">
-                Explore Trends →
-              </div>
-            </div>
+          <div className="rounded-2xl bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {insights.monthLabel} — sales vs procurement
+            </p>
+            <p className="mt-2 text-3xl font-bold text-pink-600">
+              {formatCurrency(insights.monthSales)}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              vs {formatCurrency(insights.monthProcurement)} invested (
+              {insights.unitsProcured} units stocked)
+            </p>
           </div>
-          {/* Charts & Reports */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* Sales Overview */}
-            <div className="xl:col-span-2 p-6">
-              {/* <div className="bg-white rounded-2xl shadow-sm p-6">
-                <h3 className="text-lg font-semibold mb-5">
-                  Quick Actions
-                </h3>
+          <div className="rounded-2xl bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Total revenue so far
+            </p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {formatCurrency(insights.totalRevenueSoFar)}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {insights.totalCompletedOrders} completed order
+              {insights.totalCompletedOrders !== 1 ? 's' : ''} all time
+            </p>
+          </div>
+          <div className="rounded-2xl bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Needs attention
+            </p>
+            <p className="mt-2 text-3xl font-bold text-amber-600">
+              {insights.pendingOnline.length +
+                insights.pendingCash.length +
+                insights.lowStock.length}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              {insights.pendingOnline.length} online pending ·{' '}
+              {insights.lowStock.length} low stock
+            </p>
+          </div>
+        </div>
 
-                <div className="grid gap-4">
-                  <button className="border rounded-xl p-5 text-left hover:bg-pink-50 transition">
-                    <div className="text-2xl mb-2">👤</div>
+        <div className="mt-6 grid gap-6 lg:grid-cols-5">
+          {/* Operational insights — not on other admin pages */}
+          <section className="rounded-[2rem] bg-white p-6 shadow-sm lg:col-span-3">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Operational insights
+            </h2>
+          
 
-                    <p className="font-semibold">Add Staff</p>
-
-                    <p className="text-sm text-gray-500">
-                      Create new employee accounts
-                    </p>
-                  </button>
-
-                  <button className="border rounded-xl p-5 text-left hover:bg-pink-50 transition">
-                    <div className="text-2xl mb-2">📦</div>
-
-                    <p className="font-semibold">Manage Inventory</p>cd
-
-                    <p className="text-sm text-gray-500">
-                      Update stock and supplies
-                    </p>
-                  </button>
-
-                  <button className="border rounded-xl p-5 text-left hover:bg-pink-50 transition">
-                    <div className="text-2xl mb-2">📊</div>
-
-                    <p className="font-semibold">View Reports</p>
-
-                    <p className="text-sm text-gray-500">
-                      Sales and analytics reports
-                    </p>
-                  </button>
-                </div>
-              </div> */}
-              {/* <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold">
-                  Sales Overview
-                </h2>
-
-                <select className="border rounded-lg px-3 py-2 text-sm">
-                  <option>Last 7 Days</option>
-                  <option>Last Month</option>
-                  <option>Last Year</option>
-                </select>
-              </div> */}
-
-              {/* Fake Chart */}
-              {/* <div className="h-80 flex items-end gap-4">
-                {[40, 70, 55, 90, 65, 85, 100].map(
-                  (height, index) => (
-                    <div
-                      key={index}
-                      className="flex-1 flex flex-col items-center gap-2"
-                    >
-                      <div
-                        className="w-full rounded-t-2xl bg-gradient-to-t from-pink-500 to-purple-600"
-                        style={{
-                          height: `${height}%`,
-                        }}
-                      />
-
-                      <span className="text-xs text-gray-500">
-                        Day {index + 1}
-                      </span>
-                    </div>
-                  )
-                )}
-              </div> */}
-            </div>
-
-            {/* Recent Reports */}
-            {/* <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold">
-                  Recent Reports
-                </h2>
-
-                <button className="text-sm text-pink-600">
-                  View All
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                {recentReports.map((report) => (
+            <div className="mt-6 grid gap-5 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-sm font-medium text-slate-700">
+                  Payment mix (completed today)
+                </p>
+                <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-200">
                   <div
-                    key={report.name}
-                    className="border rounded-2xl p-4 hover:bg-pink-50 transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold">
-                          {report.name}
-                        </p>
-
-                        <p className="text-sm text-gray-500 mt-1">
-                          {report.date}
-                        </p>
-                      </div>
-
-                      <span
-                        className={`text-xs px-3 py-1 rounded-full font-medium
-                          ${report.status === 'Completed'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-yellow-100 text-yellow-700'
-                          }`}
-                      >
-                        {report.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                    className="bg-blue-500 transition-all"
+                    style={{ width: `${onlinePct}%` }}
+                  />
+                  <div
+                    className="bg-amber-400 transition-all"
+                    style={{ width: `${100 - onlinePct}%` }}
+                  />
+                </div>
+                <div className="mt-2 flex justify-between text-xs text-slate-600">
+                  <span>Online {insights.todayOnline}</span>
+                  <span>Cash {insights.todayCash}</span>
+                </div>
               </div>
-            </div> */}
-          </div>
-          {/* <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
 
-
-
-            Quick Actions
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold mb-5">
-                Quick Actions
-              </h3>
-
-              <div className="grid gap-4">
-                <button className="border rounded-xl p-5 text-left hover:bg-pink-50 transition">
-                  <div className="text-2xl mb-2">👤</div>
-
-                  <p className="font-semibold">Add Staff</p>
-
-                  <p className="text-sm text-gray-500">
-                    Create new employee accounts
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-sm font-medium text-slate-700">
+                  Best seller today
+                </p>
+                <p className="mt-2 text-xl font-bold text-slate-900">
+                  {insights.topToday
+                    ? insights.topToday[0]
+                    : 'No sales yet'}
+                </p>
+                {insights.topToday && (
+                  <p className="mt-1 text-sm text-slate-500">
+                    {insights.topToday[1]} units sold
                   </p>
-                </button>
+                )}
+              </div>
 
-                <button className="border rounded-xl p-5 text-left hover:bg-pink-50 transition">
-                  <div className="text-2xl mb-2">📦</div>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-sm font-medium text-slate-700">
+                  Catalog health
+                </p>
+                <p className="mt-2 text-xl font-bold text-slate-900">
+                  {insights.inactiveFlavors} inactive
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Flavors hidden from POS this month
+                </p>
+              </div>
 
-                  <p className="font-semibold">Manage Inventory</p>
-
-                  <p className="text-sm text-gray-500">
-                    Update stock and supplies
-                  </p>
-                </button>
-
-                <button className="border rounded-xl p-5 text-left hover:bg-pink-50 transition">
-                  <div className="text-2xl mb-2">📊</div>
-
-                  <p className="font-semibold">View Reports</p>
-
-                  <p className="text-sm text-gray-500">
-                    Sales and analytics reports
-                  </p>
-                </button>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-sm font-medium text-slate-700">
+                  Month procurement
+                </p>
+                <p className="mt-2 text-xl font-bold text-teal-700">
+                  {formatCurrency(insights.monthProcurement)}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Stock-in value — see line items on Flavors
+                </p>
               </div>
             </div>
-          </div> */}
+          </section>
 
-        </main>
+          {/* Action queue — summary only, links to detail pages */}
+          <section className="rounded-[2rem] bg-white p-6 shadow-sm lg:col-span-2">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Attention Queue
+            </h2>
+            <p className="text-sm text-slate-500">
+              Open the full page for details.
+            </p>
 
-      </div>
+            <div className="mt-5 space-y-4">
+              {insights.pendingOnline.length > 0 && (
+                <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                  <p className="text-sm font-semibold text-amber-900">
+                    Online payments awaiting completion
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-amber-800">
+                    {insights.pendingOnline.slice(0, 3).map((o) => (
+                      <li key={o.id}>
+                        #{o.id.slice(0, 8)}… · {formatCurrency(o.total)}
+                      </li>
+                    ))}
+                  </ul>
+                  {insights.pendingOnline.length > 3 && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      +{insights.pendingOnline.length - 3} more
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/orders')}
+                    className="mt-3 text-sm font-semibold text-amber-900 underline"
+                  >
+                    Review Orders →
+                  </button>
+                </div>
+              )}
+
+              {insights.lowStock.length > 0 ? (
+                <div className="rounded-2xl border border-red-100 bg-red-50 p-4">
+                  <p className="text-sm font-semibold text-red-900">
+                    Restock soon
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-red-800">
+                    {insights.lowStock.slice(0, 4).map((f) => (
+                      <li key={f.id}>
+                        {f.name} — {f.stock ?? 0} left
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/inventory')}
+                    className="mt-3 text-sm font-semibold text-red-900 underline"
+                  >
+                    Open inventory →
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+                  All flavors above minimum stock levels.
+                </div>
+              )}
+
+              {insights.pendingCash.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-800">
+                    {insights.pendingCash.length} cash order
+                    {insights.pendingCash.length !== 1 ? 's' : ''} pending
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/orders')}
+                    className="mt-2 text-sm font-semibold text-teal-700 underline"
+                  >
+                    View orders →
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* Quick navigation — no duplicate data */}
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            {
+              title: 'Flavors',
+              desc: 'Monthly stock-in, carry forward & pricing',
+              path: '/admin/flavors',
+              icon: '🍨',
+              color: 'bg-yellow-100',
+            },
+            {
+              title: 'Inventory',
+              desc: 'Live stock levels across all items',
+              path: '/admin/inventory',
+              icon: '📦',
+              color: 'bg-orange-100',
+            },
+            {
+              title: 'Orders',
+              desc: 'Full order history and payment status',
+              path: '/admin/orders',
+              icon: '🛒',
+              color: 'bg-purple-100',
+            },
+            {
+              title: 'Profile',
+              desc: 'Account settings and role',
+              path: '/admin/profile',
+              icon: '👤',
+              color: 'bg-cyan-100',
+            },
+          ].map((item) => (
+            <button
+              key={item.path}
+              type="button"
+              onClick={() => navigate(item.path)}
+              className="rounded-2xl bg-white p-5 text-left shadow-sm transition hover:shadow-md"
+            >
+              <div
+                className={`mb-4 flex h-12 w-12 items-center justify-center rounded-xl text-2xl ${item.color}`}
+              >
+                {item.icon}
+              </div>
+              <p className="font-semibold text-slate-900">{item.title}</p>
+              <p className="mt-1 text-sm text-slate-500">{item.desc}</p>
+            </button>
+          ))}
+        </div>
+      </main>
     </div>
   );
 }
