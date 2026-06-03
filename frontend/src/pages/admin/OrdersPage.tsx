@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import api from '../../services/api';
 
 type Order = {
-  id: string;
+  id: number;
   status: string;
   paymentMethod?: 'CASH' | 'ONLINE';
   total: number;

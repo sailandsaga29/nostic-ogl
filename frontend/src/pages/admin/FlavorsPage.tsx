@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { Plus, Eye, EyeOff } from 'lucide-react';
 import { API_BASE_URL } from '../../config/env';
+import { sortByName } from '../../utils/sortByName';
 
 const MONTH_NAMES = [
   'January',
@@ -27,7 +28,7 @@ const MONTH_NAMES = [
 type MonthName = (typeof MONTH_NAMES)[number];
 
 type FlavorItem = {
-  id: string;
+  id: number;
   name: string;
   category: string;
   description?: string;
@@ -146,13 +147,15 @@ export default function Flavors() {
 
   const categories = [
     'All',
-    'Popsicles',
-    'Sugar Free',
-    'Cones',
-    '100 ML',
-    '500 ML',
-    'SIP UPS',
-    'Sorbet',
+    ...[
+      'Popsicles',
+      'Sugar Free',
+      'Cones',
+      '100 ML',
+      '500 ML',
+      'SIP UPS',
+      'Sorbet',
+    ].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' })),
   ];
 
   /*
@@ -272,7 +275,7 @@ export default function Flavors() {
 
       // If a month-filtered request is currently active, avoid overwriting its results
       if (!isFilteringByMonth) {
-        setData(mapped);
+        setData(sortByName(mapped));
       }
     } catch (err) {
       setError('Failed to fetch flavors');
@@ -303,8 +306,7 @@ export default function Flavors() {
 
       const result = await response.json();
 
-      // Expect result already mapped by backend
-      setData(result);
+      setData(sortByName(Array.isArray(result) ? result : []));
     } catch (err) {
       setError('Failed to fetch monthly flavors');
       setData([]);
@@ -382,7 +384,7 @@ export default function Flavors() {
   };
 
   const adjustStock = async (
-    id: string,
+    id: number,
     change: number
   ) => {
     try {
@@ -439,7 +441,7 @@ export default function Flavors() {
   };
 
   const toggleFlavorActive = async (
-    id: string,
+    id: number,
     currentState = false
   ) => {
     try {
@@ -497,14 +499,25 @@ export default function Flavors() {
         );
         break;
 
+      case 'name':
       default:
-        filtered.sort((a, b) =>
-          a.name.localeCompare(b.name)
-        );
+        return sortByName(filtered);
     }
 
     return filtered;
   }, [selectedCategory, data, sortBy]);
+
+  const totalMonthlyInvested = useMemo(
+    () =>
+      data.reduce(
+        (sum, item) => sum + Number(item.revenue ?? 0),
+        0,
+      ),
+    [data],
+  );
+
+  const formatInvested = (value: number) =>
+    `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
   const showNoDataBanner =
     !loading && isFilteringByMonth && filteredData.length === 0;
@@ -843,6 +856,18 @@ export default function Flavors() {
 
         {/* TABLE */}
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+          {!loading && isFilteringByMonth && (
+            <div className="border-b border-teal-100 bg-teal-50 px-6 py-3">
+              <p className="text-sm text-red-500">
+                <span className="font-semibold">Total invested</span> for{' '}
+                {selectedMonth} {selectedYear}:{' '}
+                {selectedIsFutureMonth
+                  ? '—'
+                  : formatInvested(totalMonthlyInvested)}
+              </p>
+            </div>
+          )}
+
           {isFilteringByMonth &&
             filteredData.some((item) => (item.carryForwarded ?? 0) > 0) && (
               <div className="border-b border-teal-100 bg-teal-50 px-6 py-3">

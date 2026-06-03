@@ -5,17 +5,34 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 
 type StaffOrder = {
-  id: string;
+  id: number;
   status: string;
   paymentMethod?: 'CASH' | 'ONLINE';
   total: number;
   note?: string;
   createdAt: string;
+  orderType?: 'RETAIL' | 'PARTY';
+  partyName?: string;
+  discountPercent?: number;
+  totalAmount?: number;
+  totalEarnings?: number;
   items?: Array<{
     quantity: number;
     unitPrice?: number;
     flavor?: { name?: string };
   }>;
+};
+
+type PartyOrderApi = {
+  id: number;
+  partyName: string;
+  totalAmount: number;
+  discountPercent: number;
+  amountAfterDiscount: number;
+  totalEarnings: number;
+  paymentMethod?: 'CASH' | 'ONLINE';
+  note?: string;
+  createdAt: string;
 };
 
 type HistoryRange = 'DAY' | 'MONTH' | 'YEAR';
@@ -61,8 +78,42 @@ export default function StaffOrderOptions() {
   const loadOrders = async () => {
     try {
       setOrdersLoading(true);
-      const response = await api.get('/orders');
-      setOrders(Array.isArray(response.data) ? response.data : []);
+      const [ordersRes, partyRes] = await Promise.all([
+        api.get('/orders'),
+        api.get('/party-orders'),
+      ]);
+      const retail: StaffOrder[] = Array.isArray(ordersRes.data)
+        ? ordersRes.data.map((o: StaffOrder) => ({ ...o, orderType: 'RETAIL' as const }))
+        : [];
+      const party: StaffOrder[] = Array.isArray(partyRes.data)
+        ? partyRes.data.map((p: PartyOrderApi) => ({
+            id: p.id,
+            orderType: 'PARTY' as const,
+            status: 'COMPLETED',
+            paymentMethod: p.paymentMethod ?? 'CASH',
+            total: Number(p.amountAfterDiscount ?? 0),
+            totalAmount: Number(p.totalAmount ?? 0),
+            discountPercent: Number(p.discountPercent ?? 0),
+            totalEarnings: Number(p.totalEarnings ?? 0),
+            partyName: p.partyName,
+            note:
+              p.note?.trim() ||
+              `${p.discountPercent}% discount · earnings ${formatCurrency(Number(p.totalEarnings ?? 0))}`,
+            createdAt: p.createdAt,
+            items: [
+              {
+                quantity: 1,
+                flavor: { name: `Party: ${p.partyName}` },
+              },
+            ],
+          }))
+        : [];
+      setOrders(
+        [...retail, ...party].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
+      );
     } catch (error) {
       console.error(error);
       setOrders([]);
@@ -110,9 +161,10 @@ export default function StaffOrderOptions() {
           .join(' ')
           .toLowerCase();
         return (
-          order.id.toLowerCase().includes(query) ||
+          String(order.id).toLowerCase().includes(query) ||
           itemsText.includes(query) ||
-          (order.note ?? '').toLowerCase().includes(query)
+          (order.note ?? '').toLowerCase().includes(query) ||
+          (order.partyName ?? '').toLowerCase().includes(query)
         );
       })
       .sort(
@@ -128,7 +180,14 @@ export default function StaffOrderOptions() {
       (o) => o.status === 'FAILED' || o.status === 'CANCELLED',
     );
 
-    const revenue = completed.reduce((s, o) => s + Number(o.total ?? 0), 0);
+    const revenue = completed.reduce(
+      (s, o) =>
+        s +
+        (o.orderType === 'PARTY'
+          ? Number(o.totalEarnings ?? o.total ?? 0)
+          : Number(o.total ?? 0)),
+      0,
+    );
     const cashRevenue = completed
       .filter((o) => o.paymentMethod !== 'ONLINE')
       .reduce((s, o) => s + Number(o.total ?? 0), 0);
@@ -217,6 +276,9 @@ export default function StaffOrderOptions() {
     });
 
   const formatItemsCompact = (order: StaffOrder) => {
+    if (order.orderType === 'PARTY' && order.partyName) {
+      return `Party · ${order.partyName}`;
+    }
     const items = order.items ?? [];
     if (items.length === 0) return '—';
     const first = items[0];
@@ -546,7 +608,7 @@ export default function StaffOrderOptions() {
                   <tbody className="divide-y divide-gray-50">
                     {filteredOrders.map((order) => (
                       <tr
-                        key={order.id}
+                        key={`${order.orderType ?? 'RETAIL'}-${order.id}`}
                         className="group hover:bg-[#f8fffe] transition-colors"
                       >
                         <td className="whitespace-nowrap px-3 py-2.5 sm:px-4">
@@ -557,7 +619,7 @@ export default function StaffOrderOptions() {
                             {formatOrderTime(order.createdAt)}
                           </p>
                           <p className="font-mono text-[9px] text-gray-300">
-                            #{order.id.slice(0, 8)}
+                          #{String(order.id).slice(0, 8)}
                           </p>
                         </td>
                         <td className="px-3 py-2.5 sm:px-4">
@@ -573,7 +635,9 @@ export default function StaffOrderOptions() {
                             {formatItemsCompact(order)}
                           </p>
                           <p className="text-[10px] text-gray-400">
-                            {itemCount(order)} unit{itemCount(order) === 1 ? '' : 's'}
+                            {order.orderType === 'PARTY'
+                              ? `${order.discountPercent ?? 0}% off · was ${formatCurrency(Number(order.totalAmount ?? 0))}`
+                              : `${itemCount(order)} unit${itemCount(order) === 1 ? '' : 's'}`}
                           </p>
                         </td>
                         <td className="hidden max-w-[140px] truncate px-3 py-2.5 text-xs text-gray-500 md:table-cell sm:px-4">
@@ -595,11 +659,13 @@ export default function StaffOrderOptions() {
                         <td className="px-3 py-2.5 sm:px-4">
                           <span
                             className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ring-inset ${
-                              statusStyles[order.status] ??
-                              'bg-gray-100 text-gray-600 ring-gray-200'
+                              order.orderType === 'PARTY'
+                                ? 'bg-orange-100 text-orange-800 ring-orange-200'
+                                : statusStyles[order.status] ??
+                                  'bg-gray-100 text-gray-600 ring-gray-200'
                             }`}
                           >
-                            {order.status}
+                            {order.orderType === 'PARTY' ? 'PARTY' : order.status}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold text-[#33c3b3] sm:px-4">

@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Header from '../../components/Layout/Header';
 import api from '../../services/api';
-import {getLoginDashboardQuote} from '../../utils/dashboardQuotes';
+import { useAuth } from '../../context/AuthContext';
+import { getLoginDashboardQuote } from '../../utils/dashboardQuotes';
 
 type Order = {
-  id: string;
+  id: number;
   status: string;
   paymentMethod?: 'CASH' | 'ONLINE';
   total: number;
@@ -14,7 +15,7 @@ type Order = {
 };
 
 type LowStockFlavor = {
-  id: string;
+  id: number;
   name?: string;
   stock?: number;
   minStock?: number;
@@ -45,34 +46,54 @@ const isSameMonth = (a: Date, b: Date) =>
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const isActive = location.pathname === '/admin/dashboard';
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [lowStock, setLowStock] = useState<LowStockFlavor[]>([]);
   const [monthlyFlavors, setMonthlyFlavors] = useState<MonthlyFlavor[]>([]);
   const [loading, setLoading] = useState(true);
   const [quote] = useState(getLoginDashboardQuote);
 
-  const now = new Date();
+  const now = useMemo(() => new Date(), []);
   const monthLabel = now.toLocaleDateString('en-IN', {
     month: 'long',
     year: 'numeric',
   });
 
-  useEffect(() => {
-    let mounted = true;
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+  const loadDashboardData = useCallback(async () => {
+    const year = new Date().getFullYear();
+    const month = new Date().getMonth() + 1;
 
-    const load = async () => {
+    const [ordersRes, lowStockRes, monthlyRes] = await Promise.all([
+      api.get('/orders'),
+      api.get('/flavors/low-stock'),
+      api.get(`/flavors/monthly/${year}/${month}`),
+    ]);
+
+    setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
+    setLowStock(Array.isArray(lowStockRes.data) ? lowStockRes.data : []);
+    setMonthlyFlavors(
+      Array.isArray(monthlyRes.data) ? monthlyRes.data : [],
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!isActive || authLoading || !isAuthenticated) {
+      return;
+    }
+
+    if (!localStorage.getItem('accessToken')) {
+      return;
+    }
+
+    let mounted = true;
+    setLoading(true);
+
+    void (async () => {
       try {
-        const [ordersRes, lowStockRes, monthlyRes] = await Promise.all([
-          api.get('/orders'),
-          api.get('/flavors/low-stock'),
-          api.get(`/flavors/monthly/${year}/${month}`),
-        ]);
-        if (!mounted) return;
-        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
-        setLowStock(Array.isArray(lowStockRes.data) ? lowStockRes.data : []);
-        setMonthlyFlavors(Array.isArray(monthlyRes.data) ? monthlyRes.data : []);
+        await loadDashboardData();
       } catch {
         if (mounted) {
           setOrders([]);
@@ -80,15 +101,16 @@ export default function AdminDashboard() {
           setMonthlyFlavors([]);
         }
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
-    };
+    })();
 
-    void load();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isActive, authLoading, isAuthenticated, loadDashboardData]);
 
   const insights = useMemo(() => {
     const yesterday = new Date(now);
@@ -182,7 +204,7 @@ export default function AdminDashboard() {
       inactiveFlavors,
       unitsProcured,
     };
-  }, [orders, lowStock, monthlyFlavors, now]);
+  }, [orders, lowStock, monthlyFlavors, monthLabel, now]);
 
   if (loading) {
     return (
@@ -372,7 +394,7 @@ export default function AdminDashboard() {
                   <ul className="mt-2 space-y-1 text-sm text-amber-800">
                     {insights.pendingOnline.slice(0, 3).map((o) => (
                       <li key={o.id}>
-                        #{o.id.slice(0, 8)}… · {formatCurrency(o.total)}
+                        #{o.id} · {formatCurrency(o.total)}
                       </li>
                     ))}
                   </ul>
@@ -405,10 +427,10 @@ export default function AdminDashboard() {
                   </ul>
                   <button
                     type="button"
-                    onClick={() => navigate('/admin/inventory')}
+                    onClick={() => navigate('/admin/flavors')}
                     className="mt-3 text-sm font-semibold text-red-900 underline"
                   >
-                    Open inventory →
+                    Open →
                   </button>
                 </div>
               ) : (

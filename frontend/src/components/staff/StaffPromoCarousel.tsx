@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 
 type Product = {
-  id: string;
+  id: number;
   name: string;
   category: string;
   type: string;
   price: number;
   stock: number;
   image: string;
+  isActive: boolean;
   updatedAt?: string;
 };
 
@@ -127,10 +128,8 @@ export default function StaffPromoCarousel({
   };
 
   return (
-    <section className="mb-6">
-      
-
-      <div className="relative overflow-hidden rounded-[28px] border border-gray-100 bg-white shadow-sm">
+    <section className="mb-5 sm:mb-6">
+      <div className="relative overflow-hidden rounded-3xl border border-stone-200/70 bg-white shadow-[0_8px_30px_rgba(28,25,23,0.06)]">
         <div
           className={`bg-gradient-to-r ${kindAccent[slide.kind]} px-6 py-8 sm:px-10 sm:py-10 text-white transition-all duration-500`}
         >
@@ -159,12 +158,16 @@ export default function StaffPromoCarousel({
                 <button
                   type="button"
                   onClick={() => onAddToCart(slide.product!)}
-                  disabled={slide.product.stock <= 0}
+                  disabled={
+                    !slide.product.isActive || slide.product.stock <= 0
+                  }
                   className="mt-5 rounded-full bg-white text-[#33c3b3] px-5 py-2 text-sm font-semibold hover:bg-white/90 transition disabled:opacity-50"
                 >
-                  {slide.product.stock <= 0
-                    ? 'Out of stock'
-                    : 'Add to cart'}
+                  {!slide.product.isActive
+                    ? 'Unavailable'
+                    : slide.product.stock <= 0
+                      ? 'Out of stock'
+                      : 'Add to cart'}
                 </button>
               ) : null}
             </div>

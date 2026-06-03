@@ -9,7 +9,7 @@ export interface LoginResponse {
   accessToken: string;
   refreshToken?: string;
   user: {
-    id: string;
+    id: number;
     name: string;
     email: string;
     role: 'super_admin' | 'admin' | 'manager' | 'staff';

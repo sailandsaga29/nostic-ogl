@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import api from '../../services/api';
 
 type Flavor = {
-  id: string;
+  id: number;
   name?: string | null;
   category?: string | null;
   stock?: number;
