@@ -8,8 +8,8 @@ import {
 
 @Entity('flavors')
 export class Flavor {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
+  @PrimaryGeneratedColumn()
+  id!: number;
 
   @Column({ type: 'varchar', unique: true, nullable: true })
   name!: string;

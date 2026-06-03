@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entity';
@@ -16,6 +15,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { InventoryTransaction } from './modules/inventory/entities/inventory-transaction.entity';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { Payment } from './modules/payments/entities/payment.entity';
+import { PartyOrdersModule } from './modules/party-orders/party-orders.module';
+import { PartyOrder } from './modules/party-orders/entities/party-order.entity';
 import { RefreshToken } from './auth/entities/refresh-token.entity';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -29,6 +30,7 @@ const entities = [
   OrderItem,
   InventoryTransaction,
   Payment,
+  PartyOrder,
 ];
 
 @Module({
@@ -80,15 +82,10 @@ const entities = [
     OrdersModule,
     InventoryModule,
     PaymentsModule,
+    PartyOrdersModule,
   ],
 
   controllers: [AppController],
-  providers: [
-    AppService,
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
-  ],
+  providers: [AppService],
 })
 export class AppModule {}

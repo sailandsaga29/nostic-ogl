@@ -4,34 +4,31 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToMany,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { OrderItem } from './order-item.entity';
 import { User } from '../../../users/entities/user.entity';
+import { PaymentMethod } from '../../orders/entities/order.entity';
 
-export enum OrderStatus {
-  PENDING = 'PENDING',
-  PROCESSING = 'PROCESSING',
-  COMPLETED = 'COMPLETED',
-  CANCELLED = 'CANCELLED',
-  REFUNDED = 'REFUNDED',
-  FAILED = 'FAILED',
-}
-
-export enum PaymentMethod {
-  CASH = 'CASH',
-  ONLINE = 'ONLINE',
-}
-
-@Entity('orders')
-export class Order {
+@Entity('party_orders')
+export class PartyOrder {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
-  status!: OrderStatus;
+  @Column({ type: 'varchar' })
+  partyName!: string;
+
+  @Column({ type: 'double precision' })
+  totalAmount!: number;
+
+  @Column({ type: 'double precision', default: 0 })
+  discountPercent!: number;
+
+  @Column({ type: 'double precision' })
+  amountAfterDiscount!: number;
+
+  @Column({ type: 'double precision' })
+  totalEarnings!: number;
 
   @Column({ type: 'enum', enum: PaymentMethod, default: PaymentMethod.CASH })
   paymentMethod!: PaymentMethod;
@@ -43,14 +40,8 @@ export class Order {
   @Column({ nullable: true })
   userId?: number;
 
-  @Column({ type: 'double precision', default: 0 })
-  total!: number;
-
   @Column({ nullable: true, type: 'text' })
   note?: string;
-
-  @OneToMany(() => OrderItem, (item) => item.order, { cascade: true })
-  items!: OrderItem[];
 
   @CreateDateColumn()
   createdAt!: Date;

@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { Flavor } from '../../flavors/entities/flavor.entity';
 
@@ -17,11 +18,15 @@ export enum InventoryChangeType {
 
 @Entity('inventory_transactions')
 export class InventoryTransaction {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
+  @PrimaryGeneratedColumn()
+  id!: number;
 
   @ManyToOne(() => Flavor)
+  @JoinColumn({ name: 'flavorId' })
   flavor!: Flavor;
+
+  @Column()
+  flavorId!: number;
 
   @Column({ type: 'double precision' })
   change!: number;

@@ -30,7 +30,7 @@ export class AuthService {
   }
 
   private sanitizeUser(user: {
-    id: string;
+    id: number;
     name: string;
     email: string;
     role: string;
@@ -45,7 +45,7 @@ export class AuthService {
     };
   }
 
-  private async assertNotLocked(userId: string) {
+  private async assertNotLocked(userId: number | string) {
     const user = await this.usersService.findById(userId);
     if (!user) return;
 
@@ -64,7 +64,7 @@ export class AuthService {
   }
 
   private async issueTokenPair(user: {
-    id: string;
+    id: number;
     email: string;
     role: string;
     name: string;
@@ -148,7 +148,7 @@ export class AuthService {
   }
 
   async refreshSession(refreshToken: string) {
-    let payload: { sub?: string; email?: string; role?: string; jti?: string };
+    let payload: { sub?: string | number; email?: string; role?: string; jti?: string };
 
     try {
       payload = this.jwtService.verify(refreshToken, {
@@ -158,15 +158,26 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    if (!payload.sub || !payload.jti) {
+    if (payload.sub == null || !payload.jti) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    await this.assertNotLocked(payload.sub);
+    const userId =
+      typeof payload.sub === 'number'
+        ? payload.sub
+        : Number.parseInt(String(payload.sub), 10);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      throw new UnauthorizedException(
+        'Session expired after account migration — please log in again',
+      );
+    }
+
+    await this.assertNotLocked(userId);
 
     const stored = await this.refreshTokenRepo.findOne({
       where: {
-        userId: payload.sub,
+        userId,
         tokenHash: this.hashTokenId(payload.jti),
         revokedAt: IsNull(),
         expiresAt: MoreThan(new Date()),
@@ -180,7 +191,7 @@ export class AuthService {
     stored.revokedAt = new Date();
     await this.refreshTokenRepo.save(stored);
 
-    const user = await this.usersService.findById(payload.sub);
+    const user = await this.usersService.findById(userId);
     if (!user || !user.isActive) {
       throw new UnauthorizedException('User not found or inactive');
     }
@@ -207,9 +218,9 @@ export class AuthService {
     return { success: true };
   }
 
-  async revokeAllUserSessions(userId: string) {
+  async revokeAllUserSessions(userId: number | string) {
     await this.refreshTokenRepo.update(
-      { userId, revokedAt: IsNull() },
+      { userId: Number(userId), revokedAt: IsNull() },
       { revokedAt: new Date() },
     );
   }

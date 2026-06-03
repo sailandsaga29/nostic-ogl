@@ -1,4 +1,12 @@
-import { IsArray, IsIn, IsNotEmpty, IsOptional, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsPositive,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateOrderItemDto } from './create-order-item.dto';
 import { ApiProperty } from '@nestjs/swagger';
@@ -6,9 +14,10 @@ import { PaymentMethod } from '../entities/order.entity';
 
 export class CreateOrderDto {
   @IsOptional()
-  @IsNotEmpty()
-  @ApiProperty({ example: 'u123', description: 'Optional user id (if placing on behalf of a registered user)', required: false })
-  userId?: string;
+  @IsInt()
+  @IsPositive()
+  @ApiProperty({ example: 1, description: 'Optional user id', required: false })
+  userId?: number;
 
   @IsOptional()
   @IsNotEmpty()
@@ -26,8 +35,8 @@ export class CreateOrderDto {
   @ApiProperty({
     type: [CreateOrderItemDto],
     example: [
-      { flavorId: 'b2d8f3a0-1c2b-4a7d-9f3e-8b9c0d1e2f3a', quantity: 2 },
-      { flavorId: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', quantity: 1 },
+      { flavorId: 1, quantity: 2 },
+      { flavorId: 2, quantity: 1 },
     ],
   })
   items!: CreateOrderItemDto[];

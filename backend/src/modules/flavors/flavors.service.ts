@@ -6,6 +6,7 @@ import { Flavor } from './entities/flavor.entity';
 import { FlavorMonthly } from './entities/flavor-monthly.entity';
 import { OrderStatus } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
+import { parseId } from '../../common/utils/parse-id';
 
 @Injectable()
 export class FlavorsService {
@@ -31,21 +32,22 @@ export class FlavorsService {
     return this.flavorsRepo.findOne({ where: { name } });
   }
 
-  async findOne(id: string) {
-    const f = await this.flavorsRepo.findOne({ where: { id } });
+  async findOne(id: number | string) {
+    const parsedId = parseId(id);
+    const f = await this.flavorsRepo.findOne({ where: { id: parsedId } });
     if (!f) throw new NotFoundException('Flavor not found');
     return f;
   }
 
-  async update(id: string, data: Partial<Flavor>) {
+  async update(id: number | string, data: Partial<Flavor>) {
     await this.findOne(id);
-    await this.flavorsRepo.update(id, data);
+    await this.flavorsRepo.update(parseId(id), data);
     return this.findOne(id);
   }
 
-  async remove(id: string) {
+  async remove(id: number | string) {
     await this.findOne(id);
-    return this.flavorsRepo.delete(id);
+    return this.flavorsRepo.delete(parseId(id));
   }
 
   async getAvailable() {
@@ -96,7 +98,7 @@ export class FlavorsService {
   }
 
   private async getUnitsSoldInMonth(
-    flavorId: string,
+    flavorId: number,
     year: number,
     month: number,
   ): Promise<number> {
@@ -144,7 +146,7 @@ export class FlavorsService {
   }
 
   private async resolveCarryForwarded(
-    flavorId: string,
+    flavorId: number,
     year: number,
     month: number,
   ): Promise<number> {
@@ -193,17 +195,18 @@ export class FlavorsService {
     );
   }
 
-  async adjustStock(id: string, change: number) {
+  async adjustStock(id: number | string, change: number) {
+    const parsedId = parseId(id);
     await this.flavorsRepo
       .createQueryBuilder()
       .update(Flavor)
       .set({
         stock: () => `COALESCE(stock, 0) + ${Number(change)}`,
       })
-      .where('id = :id', { id })
+      .where('id = :id', { id: parsedId })
       .execute();
 
-    const flavor = await this.findOne(id);
+    const flavor = await this.findOne(parsedId);
 
     if (Number(change) > 0) {
       const now = new Date();

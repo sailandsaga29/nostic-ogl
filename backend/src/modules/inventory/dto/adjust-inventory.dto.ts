@@ -1,12 +1,13 @@
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Min } from 'class-validator';
 import { InventoryChangeType } from '../entities/inventory-transaction.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AdjustInventoryDto {
   @IsNotEmpty()
-  @IsString()
-  @ApiProperty({ example: 'b2d8f3a0-1c2b-4a7d-9f3e-8b9c0d1e2f3a', description: 'Flavor id to adjust' })
-  flavorId!: string;
+  @IsInt()
+  @IsPositive()
+  @ApiProperty({ example: 1, description: 'Flavor id to adjust' })
+  flavorId!: number;
 
   @IsNumber()
   @Min(-1000000)

@@ -18,15 +18,15 @@ export enum PaymentStatus {
 
 @Entity('payments')
 export class Payment {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
+  @PrimaryGeneratedColumn()
+  id!: number;
 
   @ManyToOne(() => Order, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'orderId' })
   order!: Order;
 
   @Column()
-  orderId!: string;
+  orderId!: number;
 
   @Column({ unique: true })
   merchantTransactionId!: string;

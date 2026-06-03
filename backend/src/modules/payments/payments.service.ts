@@ -31,15 +31,16 @@ export class PaymentsService {
     private readonly ordersService: OrdersService,
   ) {}
 
-  async initPhonePeQr(orderId: string) {
+  async initPhonePeQr(orderId: number | string) {
     const order = await this.ordersService.findOne(orderId);
+    const parsedOrderId = order.id;
 
     if (order.status !== OrderStatus.PENDING) {
       throw new BadRequestException('Order is not awaiting payment');
     }
 
     const existingPending = await this.paymentsRepo.findOne({
-      where: { orderId, status: PaymentStatus.PENDING },
+      where: { orderId: parsedOrderId, status: PaymentStatus.PENDING },
       order: { createdAt: 'DESC' },
     });
 
@@ -57,18 +58,18 @@ export class PaymentsService {
     }
 
     const merchantTransactionId =
-      this.phonePeService.buildTransactionId(orderId);
+      this.phonePeService.buildTransactionId(parsedOrderId);
     const qr = await this.phonePeService.createDynamicQr({
       transactionId: merchantTransactionId,
       amountPaise,
-      merchantOrderId: orderId,
-      message: order.note || `Order ${orderId}`,
+      merchantOrderId: String(parsedOrderId),
+      message: order.note || `Order ${parsedOrderId}`,
     });
 
     const expiresAt = new Date(Date.now() + qr.expiresIn * 1000);
     const payment = await this.paymentsRepo.save(
       this.paymentsRepo.create({
-        orderId,
+        orderId: parsedOrderId,
         order,
         merchantTransactionId,
         amountPaise,

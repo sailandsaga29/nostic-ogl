@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { parseId } from '../common/utils/parse-id';
 
 @Injectable()
 export class UsersService {
@@ -14,8 +15,8 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { email } });
   }
 
-  async findById(id: string): Promise<User | null> {
-    return this.usersRepository.findOne({ where: { id } });
+  async findById(id: number | string): Promise<User | null> {
+    return this.usersRepository.findOne({ where: { id: parseId(id) } });
   }
 
   async create(userData: Partial<User>): Promise<User> {
@@ -38,7 +39,7 @@ export class UsersService {
     });
   }
 
-  async recordFailedLogin(userId: string) {
+  async recordFailedLogin(userId: number | string) {
     const user = await this.findById(userId);
     if (!user) return;
 
@@ -53,7 +54,7 @@ export class UsersService {
     await this.usersRepository.save(user);
   }
 
-  async resetLockout(userId: string) {
+  async resetLockout(userId: number | string) {
     const user = await this.findById(userId);
     if (!user) return;
 

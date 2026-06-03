@@ -89,8 +89,8 @@ export class PhonePeService {
     }
   }
 
-  buildTransactionId(orderId: string): string {
-    const compact = orderId.replace(/-/g, '').slice(0, 8);
+  buildTransactionId(orderId: number | string): string {
+    const compact = String(orderId).replace(/-/g, '').slice(0, 8);
     const suffix = Date.now().toString(36);
     return `TX${compact}${suffix}`.slice(0, 34);
   }

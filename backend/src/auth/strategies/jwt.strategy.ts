@@ -20,6 +20,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   validate(payload: JwtPayload) {
-    return { id: payload.sub, email: payload.email, role: payload.role };
+    const id =
+      typeof payload.sub === 'number'
+        ? payload.sub
+        : Number.parseInt(String(payload.sub), 10);
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return null;
+    }
+
+    return { id, email: payload.email, role: payload.role };
   }
 }

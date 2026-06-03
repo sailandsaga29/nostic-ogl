@@ -1,6 +1,7 @@
-import { IsUUID } from 'class-validator';
+import { IsInt, IsPositive } from 'class-validator';
 
 export class InitPhonePePaymentDto {
-  @IsUUID()
-  orderId!: string;
+  @IsInt()
+  @IsPositive()
+  orderId!: number;
 }
