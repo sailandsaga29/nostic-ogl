@@ -20,7 +20,16 @@ export class FlavorsService {
   ) {}
 
   async create(data: Partial<Flavor>) {
-    const f = this.flavorsRepo.create(data);
+    const image =
+      typeof data.image === 'string' && data.image.trim()
+        ? data.image.trim()
+        : undefined;
+
+    const f = this.flavorsRepo.create({
+      ...data,
+      image,
+      minStock: data.minStock ?? 15,
+    });
     return this.flavorsRepo.save(f);
   }
 

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import ActionFeedback from '../ActionFeedback';
+import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 import { calculatePartyOrderAmounts } from '../../utils/partyOrderCalc';
 
 type PartyOrderModalProps = {
@@ -31,6 +33,8 @@ export default function PartyOrderModal({
   const [note, setNote] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE'>('CASH');
   const [useCustomEarnings, setUseCustomEarnings] = useState(false);
+  const { feedback: submitFeedback, setFeedback: setSubmitFeedback } =
+    useTimedFeedback();
 
   const amounts = useMemo(
     () =>
@@ -50,6 +54,7 @@ export default function PartyOrderModal({
     setNote('');
     setPaymentMethod('CASH');
     setUseCustomEarnings(false);
+    setSubmitFeedback(null);
   };
 
   const handleClose = () => {
@@ -63,18 +68,28 @@ export default function PartyOrderModal({
     const discount = Number(discountPercent);
 
     if (!name) {
-      alert('Enter party / client name');
+      setSubmitFeedback({
+        type: 'error',
+        message: 'Enter party / client name',
+      });
       return;
     }
     if (!total || total <= 0) {
-      alert('Enter a valid total amount');
+      setSubmitFeedback({
+        type: 'error',
+        message: 'Enter a valid total amount',
+      });
       return;
     }
     if (discount < 0 || discount > 100) {
-      alert('Discount must be between 0 and 100');
+      setSubmitFeedback({
+        type: 'error',
+        message: 'Discount must be between 0 and 100',
+      });
       return;
     }
 
+    setSubmitFeedback(null);
     onSubmit({
       partyName: name,
       totalAmount: total,
@@ -238,14 +253,20 @@ export default function PartyOrderModal({
             >
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={loading}
-              className="flex-1 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 py-3 text-sm font-bold text-white shadow-md disabled:opacity-50"
-            >
-              {loading ? 'Saving…' : 'Save party order'}
-            </button>
+            <div className="flex flex-1 flex-col">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading}
+                className="rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 py-3 text-sm font-bold text-white shadow-md disabled:opacity-50"
+              >
+                {loading ? 'Saving…' : 'Save party order'}
+              </button>
+              <ActionFeedback
+                feedback={submitFeedback}
+                className="text-center"
+              />
+            </div>
           </div>
         </div>
       </div>

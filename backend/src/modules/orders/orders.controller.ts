@@ -62,6 +62,6 @@ export class OrdersController {
     examples: { default: { value: { status: 'CANCELLED' } } },
   })
   updateStatus(@Param('id') id: string, @Body() body: UpdateOrderStatusDto) {
-    return this.ordersService.updateStatus(id, body.status);
+    return this.ordersService.updateStatus(id, body.status, body.comment);
   }
 }

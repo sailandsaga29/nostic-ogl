@@ -16,8 +16,8 @@ export default function Sidebar() {
       path: '/admin/flavors',
     },
     {
-      label: 'Inventory',
-      icon: '📦',
+      label: 'Expenses',
+      icon: '💰',
       path: '/admin/inventory',
     },
     {

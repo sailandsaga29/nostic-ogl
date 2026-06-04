@@ -68,7 +68,7 @@ export class OrdersService {
         total,
         note: orderData.note,
         userId: orderData.userId,
-        status: isOnline ? OrderStatus.PENDING : OrderStatus.COMPLETED,
+        status: OrderStatus.PENDING,
         paymentMethod,
       }),
     );
@@ -98,7 +98,7 @@ export class OrdersService {
     }
 
     for (const item of order.items ?? []) {
-      const flavorId = item.flavor?.id;
+      const flavorId = item.flavorId ?? item.flavor?.id;
       if (!flavorId) continue;
 
       const f = await this.flavorsRepo.findOne({ where: { id: flavorId } });
@@ -148,22 +148,61 @@ export class OrdersService {
     return o;
   }
 
-  async updateStatus(id: number | string, status: OrderStatus) {
+  private appendAdminComment(existing: string | undefined, comment: string) {
+    const stamp = `[Admin] ${comment.trim()}`;
+    const base = existing?.trim();
+    if (!base || base === '-') {
+      return stamp;
+    }
+    return `${base}\n${stamp}`;
+  }
+
+  async updateStatus(
+    id: number | string,
+    status: OrderStatus,
+    comment?: string,
+  ) {
     const order = await this.findOne(id);
     if (order.status === status) return order;
 
-    if (status === OrderStatus.CANCELLED && order.items) {
-      if (order.status === OrderStatus.COMPLETED) {
+    if (comment?.trim()) {
+      order.note = this.appendAdminComment(order.note, comment);
+      await this.ordersRepo.save(order);
+    }
+
+    if (
+      status === OrderStatus.COMPLETED &&
+      order.status !== OrderStatus.COMPLETED
+    ) {
+      return this.fulfillOrder(id);
+    }
+
+    if (status === OrderStatus.CANCELLED) {
+      // Pending orders never deducted stock — cancel keeps inventory unchanged.
+      // Completed orders restore quantities back to flavor stock.
+      if (order.status === OrderStatus.COMPLETED && order.items) {
         for (const it of order.items) {
-          const f = await this.flavorsRepo.findOne({ where: { id: (it as any).flavor.id } });
+          const restoreFlavorId = it.flavorId ?? it.flavor?.id;
+          if (!restoreFlavorId) continue;
+          const f = await this.flavorsRepo.findOne({ where: { id: restoreFlavorId } });
           if (f) {
             f.stock = Number(f.stock) + Number(it.quantity);
             await this.flavorsRepo.save(f);
-            const tx = this.invRepo.create({ flavor: f, flavorId: f.id, change: it.quantity, type: InventoryChangeType.RELEASE, reason: `Order ${order.id} cancelled` });
+            const tx = this.invRepo.create({
+              flavor: f,
+              flavorId: f.id,
+              change: it.quantity,
+              type: InventoryChangeType.RELEASE,
+              reason: `Order ${order.id} cancelled`,
+            });
             await this.invRepo.save(tx);
           }
         }
       }
+
+      const refreshed = await this.findOne(id);
+      refreshed.status = OrderStatus.CANCELLED;
+      return this.ordersRepo.save(refreshed);
     }
 
     order.status = status;

@@ -26,7 +26,7 @@ export class Flavor {
   @Column({ type: 'double precision', default: 0 })
   stock!: number;
 
-  @Column({ type: 'double precision', default: 10 })
+  @Column({ type: 'double precision', default: 15 })
   minStock!: number;
 
   @Column({ nullable: true })

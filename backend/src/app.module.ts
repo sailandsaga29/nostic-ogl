@@ -17,6 +17,8 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { Payment } from './modules/payments/entities/payment.entity';
 import { PartyOrdersModule } from './modules/party-orders/party-orders.module';
 import { PartyOrder } from './modules/party-orders/entities/party-order.entity';
+import { ExpensesModule } from './modules/expenses/expenses.module';
+import { Expense } from './modules/expenses/entities/expense.entity';
 import { RefreshToken } from './auth/entities/refresh-token.entity';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -31,6 +33,7 @@ const entities = [
   InventoryTransaction,
   Payment,
   PartyOrder,
+  Expense,
 ];
 
 @Module({
@@ -83,6 +86,7 @@ const entities = [
     InventoryModule,
     PaymentsModule,
     PartyOrdersModule,
+    ExpensesModule,
   ],
 
   controllers: [AppController],

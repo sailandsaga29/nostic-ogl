@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { markLoginForRevenueCelebrationCheck } from '../utils/revenueMilestone';
 import full from '../assets/full.png';
 import axios from 'axios';
 
@@ -26,6 +27,8 @@ export default function Login() {
         email,
         password
       );
+
+      markLoginForRevenueCelebrationCheck();
 
       navigate(
         getRedirectPath(user.role)

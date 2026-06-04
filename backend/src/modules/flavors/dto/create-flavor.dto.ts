@@ -1,4 +1,13 @@
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min, IsUrl } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  IsUrl,
+  ValidateIf,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateFlavorDto {
@@ -32,10 +41,15 @@ export class CreateFlavorDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  @ApiProperty({ example: 10, description: 'Minimum stock threshold for low-stock alerts', required: false })
+  @ApiProperty({
+    example: 15,
+    description: 'Minimum stock threshold for low-stock alerts (defaults to 15)',
+    required: false,
+  })
   minStock?: number;
 
   @IsOptional()
+  @ValidateIf((_, value) => value != null && String(value).trim() !== '')
   @IsUrl()
   @ApiProperty({ example: 'https://example.com/images/mango.png', description: 'Optional image URL', required: false })
   image?: string;

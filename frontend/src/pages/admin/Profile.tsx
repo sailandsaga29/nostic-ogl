@@ -1,4 +1,3 @@
-import Header from '../../components/Layout/Header';
 import { useAuth } from '../../context/AuthContext';
 import {
   Bell,
@@ -41,9 +40,7 @@ export default function Profile() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb]">
-      <Header />
-
+    <div className="bg-[#f7f9fb]">
       <main className="max-w-7xl mx-auto px-4 md:px-6 py-6">
         {/* PROFILE HEADER */}
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">

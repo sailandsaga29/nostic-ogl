@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../assets/logo.png';
 import { useAuth } from '../../context/AuthContext';
+import axios from 'axios';
 import api from '../../services/api';
+import ActionFeedback from '../../components/ActionFeedback';
+import TableRefreshButton from '../../components/TableRefreshButton';
+import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 
 type StaffOrder = {
   id: number;
@@ -48,8 +52,15 @@ const statusStyles: Record<string, string> = {
   FAILED: 'bg-red-100 text-red-700 ring-red-200',
 };
 
+const ORDERS_PER_PAGE = 15;
+
 const formatCurrency = (value: number) =>
   `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+const displayStatus = (order: StaffOrder) => {
+  if (order.status === 'CANCELLED') return 'FAILED';
+  return order.status;
+};
 
 const formatRelativeTime = (createdAt: string) => {
   const diffMs = Date.now() - new Date(createdAt).getTime();
@@ -64,7 +75,16 @@ const formatRelativeTime = (createdAt: string) => {
   });
 };
 
-export default function StaffOrderOptions() {
+type OrdersPageVariant = 'staff' | 'admin';
+
+type StaffOrderOptionsProps = {
+  variant?: OrdersPageVariant;
+};
+
+export default function StaffOrderOptions({
+  variant = 'staff',
+}: StaffOrderOptionsProps) {
+  const isAdminView = variant === 'admin';
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -74,6 +94,15 @@ export default function StaffOrderOptions() {
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pendingAdminComments, setPendingAdminComments] = useState<
+    Record<number, string>
+  >({});
+  const [pendingActionOrderId, setPendingActionOrderId] = useState<
+    number | null
+  >(null);
+  const { feedback: pendingActionFeedback, setFeedback: setPendingActionFeedback } =
+    useTimedFeedback();
 
   const loadOrders = async () => {
     try {
@@ -152,7 +181,7 @@ export default function StaffOrderOptions() {
         if (paymentFilter !== 'ALL' && order.paymentMethod !== paymentFilter) {
           return false;
         }
-        if (statusFilter !== 'ALL' && order.status !== statusFilter) {
+        if (statusFilter !== 'ALL' && displayStatus(order) !== statusFilter) {
           return false;
         }
         if (!query) return true;
@@ -172,6 +201,30 @@ export default function StaffOrderOptions() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
   }, [rangeOrders, paymentFilter, statusFilter, search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [historyRange, paymentFilter, statusFilter, search]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredOrders.length / ORDERS_PER_PAGE),
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const paginatedOrders = useMemo(() => {
+    const start = (page - 1) * ORDERS_PER_PAGE;
+    return filteredOrders.slice(start, start + ORDERS_PER_PAGE);
+  }, [filteredOrders, page]);
+
+  const pageStart =
+    filteredOrders.length === 0
+      ? 0
+      : (page - 1) * ORDERS_PER_PAGE + 1;
+  const pageEnd = Math.min(page * ORDERS_PER_PAGE, filteredOrders.length);
 
   const analytics = useMemo(() => {
     const completed = rangeOrders.filter((o) => o.status === 'COMPLETED');
@@ -291,8 +344,98 @@ export default function StaffOrderOptions() {
   const itemCount = (order: StaffOrder) =>
     (order.items ?? []).reduce((s, i) => s + Number(i.quantity ?? 0), 0);
 
+  const isPendingRetail = (order: StaffOrder) =>
+    order.orderType !== 'PARTY' && order.status === 'PENDING';
+
+  const updatePendingOrder = async (
+    orderId: number,
+    status: 'COMPLETED' | 'CANCELLED',
+  ) => {
+    try {
+      setPendingActionOrderId(orderId);
+      setPendingActionFeedback(null);
+      await api.patch(`/orders/${orderId}/status`, {
+        status,
+        comment: pendingAdminComments[orderId]?.trim() || undefined,
+      });
+      setPendingActionFeedback({
+        type: 'success',
+        message:
+          status === 'COMPLETED'
+            ? `Order #${orderId} completed — stock deducted for ordered quantities`
+            : `Order #${orderId} cancelled — stock unchanged (order was pending)`,
+      });
+      setPendingAdminComments((prev) => {
+        const next = { ...prev };
+        delete next[orderId];
+        return next;
+      });
+      await loadOrders();
+    } catch (err) {
+      let message =
+        status === 'COMPLETED'
+          ? 'Could not complete order'
+          : 'Could not cancel order';
+      if (axios.isAxiosError(err)) {
+        const apiMessage = err.response?.data?.message;
+        if (typeof apiMessage === 'string') message = apiMessage;
+        else if (Array.isArray(apiMessage)) message = apiMessage.join(', ');
+      }
+      setPendingActionFeedback({ type: 'error', message });
+    } finally {
+      setPendingActionOrderId(null);
+    }
+  };
+
+  const renderPendingAdminActions = (orderId: number) => {
+    const busy = pendingActionOrderId === orderId;
+    return (
+      <div className="flex min-w-[200px] flex-col gap-1.5">
+        <input
+          type="text"
+          value={pendingAdminComments[orderId] ?? ''}
+          onChange={(e) =>
+            setPendingAdminComments((prev) => ({
+              ...prev,
+              [orderId]: e.target.value,
+            }))
+          }
+          placeholder="Short comment…"
+          maxLength={200}
+          className="w-full rounded-lg border border-gray-200 px-2 py-1 text-[11px] outline-none focus:border-teal-500"
+        />
+        <p className="text-[9px] leading-snug text-gray-400">
+          Complete deducts stock · Cancel keeps stock as-is
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void updatePendingOrder(orderId, 'COMPLETED')}
+            className="rounded-lg bg-teal-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-teal-700 disabled:opacity-50"
+          >
+            {busy ? 'Saving…' : 'Complete'}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void updatePendingOrder(orderId, 'CANCELLED')}
+            className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-red-700 hover:bg-red-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-[#eef1f4]">
+    <div
+      className={
+        isAdminView ? undefined : 'min-h-screen bg-[#eef1f4]'
+      }
+    >
+      {!isAdminView && (
       <header className="sticky top-0 z-50 border-b border-gray-200 bg-white px-4 py-3 sm:px-6">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-6 lg:gap-10">
@@ -341,18 +484,19 @@ export default function StaffOrderOptions() {
           </div>
         </div>
       </header>
+      )}
 
       <main className="mx-auto max-w-[1600px] p-3 sm:p-4 lg:p-5">
         {/* Toolbar */}
         <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
-              Shift Orders
-            </h1>
-            <p className="text-xs text-gray-500 sm:text-sm">
+            <h3 className="text-xl font-bold text-[#0ea5b7] sm:text-2xl">
+              Order History
+            </h3>
+            {/* <p className="text-xs text-gray-500 sm:text-sm">
               {rangeLabel} · {analytics.completedCount} completed ·{' '}
               {formatCurrency(analytics.revenue)} collected
-            </p>
+            </p> */}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -371,19 +515,14 @@ export default function StaffOrderOptions() {
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => void loadOrders()}
-              disabled={ordersLoading}
-              className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-600 shadow-sm ring-1 ring-gray-100 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {ordersLoading ? 'Refreshing…' : 'Refresh'}
-            </button>
-            <button
-              onClick={() => navigate('/staff/pos')}
-              className="rounded-xl bg-[#33c3b3] px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#2bb1a2] sm:hidden"
-            >
-              + New Order
-            </button>
+            {!isAdminView && (
+              <button
+                onClick={() => navigate('/staff/pos')}
+                className="rounded-xl bg-[#33c3b3] px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#2bb1a2] sm:hidden"
+              >
+                + New Order
+              </button>
+            )}
           </div>
         </div>
 
@@ -525,6 +664,11 @@ export default function StaffOrderOptions() {
 
           {/* Main — dense order table */}
           <section className="min-w-0 rounded-2xl bg-white shadow-sm ring-1 ring-gray-100">
+            {isAdminView && pendingActionFeedback ? (
+              <div className="border-b border-gray-100 px-3 py-2 sm:px-4">
+                <ActionFeedback feedback={pendingActionFeedback} />
+              </div>
+            ) : null}
             <div className="border-b border-gray-100 p-3 sm:p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <input
@@ -534,9 +678,18 @@ export default function StaffOrderOptions() {
                   placeholder="Search flavor, note, order ID…"
                   className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#33c3b3] sm:max-w-xs"
                 />
-                <p className="text-xs text-gray-500">
-                  Showing {filteredOrders.length} of {analytics.orderCount}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-gray-500">
+                    {filteredOrders.length === 0
+                      ? `Showing 0 of ${analytics.orderCount}`
+                      : `Showing ${pageStart}–${pageEnd} of ${filteredOrders.length} (${analytics.orderCount} in range)`}
+                  </p>
+                  <TableRefreshButton
+                    loading={ordersLoading}
+                    onRefresh={() => void loadOrders()}
+                    label="Refresh orders"
+                  />
+                </div>
               </div>
 
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -581,14 +734,18 @@ export default function StaffOrderOptions() {
                   No orders match your filters
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Try a different range or start selling from POS
+                  {isAdminView
+                    ? 'Try a different range or clear filters'
+                    : 'Try a different range or start selling from POS'}
                 </p>
-                <button
-                  onClick={() => navigate('/staff/pos')}
-                  className="mt-4 rounded-full bg-[#33c3b3] px-5 py-2 text-sm font-bold text-white"
-                >
-                  Open POS
-                </button>
+                {!isAdminView && (
+                  <button
+                    onClick={() => navigate('/staff/pos')}
+                    className="mt-4 rounded-full bg-[#33c3b3] px-5 py-2 text-sm font-bold text-white"
+                  >
+                    Open POS
+                  </button>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -602,11 +759,16 @@ export default function StaffOrderOptions() {
                       </th>
                       <th className="px-3 py-2.5 sm:px-4">Pay</th>
                       <th className="px-3 py-2.5 sm:px-4">Status</th>
+                      {isAdminView && (
+                        <th className="hidden px-3 py-2.5 lg:table-cell sm:px-4">
+                          Action
+                        </th>
+                      )}
                       <th className="px-3 py-2.5 text-right sm:px-4">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {filteredOrders.map((order) => (
+                    {paginatedOrders.map((order) => (
                       <tr
                         key={`${order.orderType ?? 'RETAIL'}-${order.id}`}
                         className="group hover:bg-[#f8fffe] transition-colors"
@@ -661,13 +823,29 @@ export default function StaffOrderOptions() {
                             className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ring-inset ${
                               order.orderType === 'PARTY'
                                 ? 'bg-orange-100 text-orange-800 ring-orange-200'
-                                : statusStyles[order.status] ??
+                                : statusStyles[displayStatus(order)] ??
                                   'bg-gray-100 text-gray-600 ring-gray-200'
                             }`}
                           >
-                            {order.orderType === 'PARTY' ? 'PARTY' : order.status}
+                            {order.orderType === 'PARTY'
+                              ? 'PARTY'
+                              : displayStatus(order)}
                           </span>
+                          {isAdminView && isPendingRetail(order) ? (
+                            <div className="mt-2 lg:hidden">
+                              {renderPendingAdminActions(order.id)}
+                            </div>
+                          ) : null}
                         </td>
+                        {isAdminView && (
+                          <td className="hidden px-3 py-2.5 lg:table-cell sm:px-4">
+                            {isPendingRetail(order) ? (
+                              renderPendingAdminActions(order.id)
+                            ) : (
+                              <span className="text-[10px] text-gray-400">—</span>
+                            )}
+                          </td>
+                        )}
                         <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold text-[#33c3b3] sm:px-4">
                           ₹{Number(order.total).toFixed(0)}
                         </td>
@@ -675,6 +853,38 @@ export default function StaffOrderOptions() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {!ordersLoading && filteredOrders.length > 0 && (
+              <div className="flex flex-col gap-2 border-t border-gray-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                <p className="text-xs text-gray-500">
+                  {pageStart}–{pageEnd} of {filteredOrders.length} orders ·{' '}
+                  {ORDERS_PER_PAGE} per page
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <span className="min-w-[5rem] text-center text-xs font-semibold text-gray-700">
+                    {page} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() =>
+                      setPage((p) => Math.min(totalPages, p + 1))
+                    }
+                    className="rounded-lg bg-[#33c3b3] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#2bb1a2] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             )}
           </section>

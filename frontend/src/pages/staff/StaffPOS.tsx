@@ -4,8 +4,10 @@ import { useAuth } from '../../context/AuthContext';
 import logo from '../../assets/logo.png';
 import api from '../../services/api';
 import axios from 'axios';
+import ActionFeedback from '../../components/ActionFeedback';
 import StaffPromoCarousel from '../../components/staff/StaffPromoCarousel';
 import PhonePeQrModal from '../../components/payments/PhonePeQrModal';
+import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 import { sortByName } from '../../utils/sortByName';
 import { calculatePartyOrderAmounts } from '../../utils/partyOrderCalc';
 
@@ -142,6 +144,18 @@ export default function StaffPOS() {
   const [bulkTotalAmount, setBulkTotalAmount] = useState('');
   const [bulkDiscountPercent, setBulkDiscountPercent] = useState('0');
 
+  const { feedback: checkoutFeedback, setFeedback: setCheckoutFeedback } =
+    useTimedFeedback();
+  const { feedback: productFeedback, setFeedback: setProductFeedback } =
+    useTimedFeedback();
+  const [productFeedbackId, setProductFeedbackId] = useState<number | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!productFeedback) setProductFeedbackId(null);
+  }, [productFeedback]);
+
   /*
   =========================================
   ADD TO CART
@@ -150,11 +164,19 @@ export default function StaffPOS() {
 
   const addToCart = (product: Product) => {
     if (!product.isActive) {
-      alert('This flavor is currently disabled');
+      setProductFeedbackId(product.id);
+      setProductFeedback({
+        type: 'error',
+        message: 'This flavor is currently disabled',
+      });
       return;
     }
     if (product.stock <= 0) {
-      alert('This flavor is out of stock');
+      setProductFeedbackId(product.id);
+      setProductFeedback({
+        type: 'error',
+        message: 'This flavor is out of stock',
+      });
       return;
     }
     setCart((prev) => {
@@ -280,15 +302,24 @@ export default function StaffPOS() {
       const total = cart.length > 0 ? subtotal : Number(bulkTotalAmount);
 
       if (!name) {
-        alert('Enter party / client name');
+        setCheckoutFeedback({
+          type: 'error',
+          message: 'Enter party / client name',
+        });
         return;
       }
       if (cart.length === 0 && (!total || total <= 0)) {
-        alert('Add items to cart or enter a total amount');
+        setCheckoutFeedback({
+          type: 'error',
+          message: 'Add items to cart or enter a total amount',
+        });
         return;
       }
       if (discount < 0 || discount > 100) {
-        alert('Discount must be between 0 and 100');
+        setCheckoutFeedback({
+          type: 'error',
+          message: 'Discount must be between 0 and 100',
+        });
         return;
       }
 
@@ -297,6 +328,7 @@ export default function StaffPOS() {
 
       try {
         setLoading(true);
+        setCheckoutFeedback(null);
 
         await api.post('/party-orders', {
           partyName: name,
@@ -322,7 +354,10 @@ export default function StaffPOS() {
 
           if (paymentMethod === 'CASH') {
             await api.post('/orders', payload);
-            alert('Bulk order completed');
+            setCheckoutFeedback({
+              type: 'success',
+              message: 'Bulk order completed',
+            });
             setCart([]);
             setOrderNote('');
             resetBulkFields();
@@ -345,7 +380,10 @@ export default function StaffPOS() {
           return;
         }
 
-        alert('Party order saved');
+        setCheckoutFeedback({
+          type: 'success',
+          message: 'Party order saved',
+        });
         setOrderNote('');
         resetBulkFields();
       } catch (err) {
@@ -356,7 +394,7 @@ export default function StaffPOS() {
           if (typeof apiMessage === 'string') message = apiMessage;
           else if (Array.isArray(apiMessage)) message = apiMessage.join(', ');
         }
-        alert(message);
+        setCheckoutFeedback({ type: 'error', message });
       } finally {
         setLoading(false);
       }
@@ -364,12 +402,13 @@ export default function StaffPOS() {
     }
 
     if (cart.length === 0) {
-      alert('Cart is empty');
+      setCheckoutFeedback({ type: 'error', message: 'Cart is empty' });
       return;
     }
 
     try {
       setLoading(true);
+      setCheckoutFeedback(null);
 
       const payload = {
         userId: user?.id,
@@ -383,7 +422,10 @@ export default function StaffPOS() {
 
       if (paymentMethod === 'CASH') {
         await api.post('/orders', payload);
-        alert('Order placed successfully');
+        setCheckoutFeedback({
+          type: 'success',
+          message: 'Order placed successfully',
+        });
         setCart([]);
         setOrderNote('');
         await loadProducts(false);
@@ -413,14 +455,17 @@ export default function StaffPOS() {
           message = apiMessage.join(', ');
         }
       }
-      alert(message);
+      setCheckoutFeedback({ type: 'error', message });
     } finally {
       setLoading(false);
     }
   };
 
   const handlePaymentSuccess = async () => {
-    alert('Payment received. Order completed.');
+    setCheckoutFeedback({
+      type: 'success',
+      message: 'Payment received. Order completed.',
+    });
     setPaymentSession(null);
     setCart([]);
     setOrderNote('');
@@ -565,18 +610,28 @@ export default function StaffPOS() {
                     <p className="text-[10px] text-gray-400">
                       {product.stock} left · {product.category}
                     </p>
-                    <div className="mt-auto flex items-center justify-between gap-1 pt-2">
-                      <p className="text-sm font-bold text-[#33c3b3]">
-                        ₹{product.price}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => addToCart(product)}
-                        disabled={!canAddProduct(product)}
-                        className="rounded-lg bg-[#33c3b3] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#2bb1a2] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {addButtonLabel(product)}
-                      </button>
+                    <div className="mt-auto pt-2">
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-sm font-bold text-[#33c3b3]">
+                          ₹{product.price}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => addToCart(product)}
+                          disabled={!canAddProduct(product)}
+                          className="rounded-lg bg-[#33c3b3] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#2bb1a2] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {addButtonLabel(product)}
+                        </button>
+                      </div>
+                      <ActionFeedback
+                        feedback={
+                          productFeedbackId === product.id
+                            ? productFeedback
+                            : null
+                        }
+                        className="text-right"
+                      />
                     </div>
                   </div>
                 </div>
@@ -743,22 +798,28 @@ export default function StaffPOS() {
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={placeOrder}
-                  disabled={
-                    !canCheckout || loading || paymentSession !== null
-                  }
-                  className="w-full rounded-lg bg-gradient-to-r from-[#33c3b3] to-[#63d471] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-                >
-                  {loading
-                    ? 'Processing…'
-                    : paymentMethod === 'ONLINE'
-                      ? 'PhonePe QR'
-                      : isBulkOrder
-                        ? 'Complete bulk order'
-                        : 'Complete order'}
-                </button>
+                <div>
+                  <button
+                    type="button"
+                    onClick={placeOrder}
+                    disabled={
+                      !canCheckout || loading || paymentSession !== null
+                    }
+                    className="w-full rounded-lg bg-gradient-to-r from-[#33c3b3] to-[#63d471] py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    {loading
+                      ? 'Processing…'
+                      : paymentMethod === 'ONLINE'
+                        ? 'PhonePe QR'
+                        : isBulkOrder
+                          ? 'Complete bulk order'
+                          : 'Complete order'}
+                  </button>
+                  <ActionFeedback
+                    feedback={checkoutFeedback}
+                    className="text-center"
+                  />
+                </div>
               </div>
             </div>
           </div>

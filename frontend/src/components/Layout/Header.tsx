@@ -24,7 +24,7 @@ export default function Header() {
       path: '/admin/flavors',
     },
     {
-      label: 'INVENTORY',
+      label: 'EXPENSES',
       path: '/admin/inventory',
     },
     {

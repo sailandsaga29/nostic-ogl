@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import Header from '../../components/Layout/Header';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import RevenueMilestoneCelebration from '../../components/RevenueMilestoneCelebration';
 import { getLoginDashboardQuote } from '../../utils/dashboardQuotes';
+import {
+  acknowledgeRevenueMilestone,
+  consumeLoginRevenueCelebrationCheck,
+  shouldShowRevenueCelebration,
+} from '../../utils/revenueMilestone';
 
 type Order = {
   id: number;
@@ -27,6 +32,32 @@ type MonthlyFlavor = {
   isActive?: boolean;
 };
 
+type ExpenseRow = {
+  amount: number;
+  expenseDate?: string;
+  createdAt?: string;
+};
+
+type PartyOrder = {
+  id: number;
+  partyName: string;
+  totalAmount: number;
+  discountPercent: number;
+  amountAfterDiscount: number;
+  totalEarnings: number;
+  paymentMethod?: 'CASH' | 'ONLINE';
+  note?: string;
+  createdAt: string;
+};
+
+const sumPartyEarnings = (list: PartyOrder[]) =>
+  list.reduce((s, p) => s + Number(p.totalEarnings ?? 0), 0);
+
+const isSameYear = (dateStr: string, year: number) => {
+  const date = new Date(dateStr);
+  return !Number.isNaN(date.getTime()) && date.getFullYear() === year;
+};
+
 const formatCurrency = (value: number) =>
   `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
@@ -48,16 +79,20 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const isActive = location.pathname === '/admin/dashboard';
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [partyOrders, setPartyOrders] = useState<PartyOrder[]>([]);
   const [lowStock, setLowStock] = useState<LowStockFlavor[]>([]);
   const [monthlyFlavors, setMonthlyFlavors] = useState<MonthlyFlavor[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [totalProcurementAllTime, setTotalProcurementAllTime] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showRevenueCelebration, setShowRevenueCelebration] = useState(false);
   const [quote] = useState(getLoginDashboardQuote);
+  const hasLoadedDataRef = useRef(false);
+  const isDashboardActive = location.pathname === '/admin/dashboard';
 
-  const now = useMemo(() => new Date(), []);
-  const monthLabel = now.toLocaleDateString('en-IN', {
+  const monthLabel = new Date().toLocaleDateString('en-IN', {
     month: 'long',
     year: 'numeric',
   });
@@ -66,21 +101,62 @@ export default function AdminDashboard() {
     const year = new Date().getFullYear();
     const month = new Date().getMonth() + 1;
 
-    const [ordersRes, lowStockRes, monthlyRes] = await Promise.all([
-      api.get('/orders'),
-      api.get('/flavors/low-stock'),
-      api.get(`/flavors/monthly/${year}/${month}`),
-    ]);
+    const loadProcurementAllTime = async () => {
+      try {
+        const yearsRes = await api.get('/flavors/meta/years');
+        const years: number[] = Array.isArray(yearsRes.data)
+          ? yearsRes.data
+          : [];
+
+        let procurementTotal = 0;
+        for (const y of years) {
+          const monthsRes = await api.get(`/flavors/meta/months/${y}`);
+          const months: number[] = Array.isArray(monthsRes.data)
+            ? monthsRes.data
+            : [];
+          const monthlyResults = await Promise.all(
+            months.map((m) => api.get(`/flavors/monthly/${y}/${m}`)),
+          );
+          for (const res of monthlyResults) {
+            const rows: MonthlyFlavor[] = Array.isArray(res.data)
+              ? res.data
+              : [];
+            procurementTotal += rows.reduce(
+              (sum, row) => sum + Number(row.revenue ?? 0),
+              0,
+            );
+          }
+        }
+        return procurementTotal;
+      } catch {
+        return 0;
+      }
+    };
+
+    const [ordersRes, partyRes, lowStockRes, monthlyRes, expensesRes, procurementTotal] =
+      await Promise.all([
+        api.get('/orders'),
+        api.get('/party-orders'),
+        api.get('/flavors/low-stock'),
+        api.get(`/flavors/monthly/${year}/${month}`),
+        api.get('/expenses'),
+        loadProcurementAllTime(),
+      ]);
 
     setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
+    setPartyOrders(Array.isArray(partyRes.data) ? partyRes.data : []);
     setLowStock(Array.isArray(lowStockRes.data) ? lowStockRes.data : []);
     setMonthlyFlavors(
       Array.isArray(monthlyRes.data) ? monthlyRes.data : [],
     );
+    setExpenses(
+      Array.isArray(expensesRes.data) ? expensesRes.data : [],
+    );
+    setTotalProcurementAllTime(procurementTotal);
   }, []);
 
   useEffect(() => {
-    if (!isActive || authLoading || !isAuthenticated) {
+    if (!isDashboardActive || authLoading || !isAuthenticated) {
       return;
     }
 
@@ -89,16 +165,26 @@ export default function AdminDashboard() {
     }
 
     let mounted = true;
-    setLoading(true);
+    const isSilentRefresh = hasLoadedDataRef.current;
+
+    if (!isSilentRefresh) {
+      setLoading(true);
+    }
 
     void (async () => {
       try {
         await loadDashboardData();
-      } catch {
         if (mounted) {
+          hasLoadedDataRef.current = true;
+        }
+      } catch {
+        if (mounted && !hasLoadedDataRef.current) {
           setOrders([]);
+          setPartyOrders([]);
           setLowStock([]);
           setMonthlyFlavors([]);
+          setExpenses([]);
+          setTotalProcurementAllTime(0);
         }
       } finally {
         if (mounted) {
@@ -110,9 +196,46 @@ export default function AdminDashboard() {
     return () => {
       mounted = false;
     };
-  }, [isActive, authLoading, isAuthenticated, loadDashboardData]);
+  }, [
+    isDashboardActive,
+    authLoading,
+    isAuthenticated,
+    loadDashboardData,
+  ]);
+
+  useEffect(() => {
+    if (!isDashboardActive || authLoading || !isAuthenticated) {
+      return;
+    }
+    if (!localStorage.getItem('accessToken')) {
+      return;
+    }
+
+    const refreshSilently = () => {
+      void loadDashboardData()
+        .then(() => {
+          hasLoadedDataRef.current = true;
+        })
+        .catch(() => {});
+    };
+
+    const intervalId = window.setInterval(refreshSilently, 45_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSilently();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [isDashboardActive, authLoading, isAuthenticated, loadDashboardData]);
 
   const insights = useMemo(() => {
+    const now = new Date();
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
 
@@ -124,22 +247,38 @@ export default function AdminDashboard() {
       isSameDay(new Date(o.createdAt), yesterday),
     );
 
-    const todayRevenue = todayCompleted.reduce(
+    const partyToday = partyOrders.filter((p) =>
+      isSameDay(new Date(p.createdAt), now),
+    );
+    const partyYesterday = partyOrders.filter((p) =>
+      isSameDay(new Date(p.createdAt), yesterday),
+    );
+    const partyMonth = partyOrders.filter((p) =>
+      isSameMonth(new Date(p.createdAt), now),
+    );
+
+    const retailTodayRevenue = todayCompleted.reduce(
       (s, o) => s + Number(o.total ?? 0),
       0,
     );
-    const yesterdayRevenue = yesterdayCompleted.reduce(
+    const retailYesterdayRevenue = yesterdayCompleted.reduce(
       (s, o) => s + Number(o.total ?? 0),
       0,
     );
+    const partyTodayEarnings = sumPartyEarnings(partyToday);
+    const partyYesterdayEarnings = sumPartyEarnings(partyYesterday);
+    const todayRevenue = retailTodayRevenue + partyTodayEarnings;
+    const yesterdayRevenue = retailYesterdayRevenue + partyYesterdayEarnings;
 
     const monthCompleted = completed.filter((o) =>
       isSameMonth(new Date(o.createdAt), now),
     );
-    const monthSales = monthCompleted.reduce(
+    const retailMonthSales = monthCompleted.reduce(
       (s, o) => s + Number(o.total ?? 0),
       0,
     );
+    const monthSales =
+      retailMonthSales + sumPartyEarnings(partyMonth);
     const monthProcurement = monthlyFlavors.reduce(
       (s, f) => s + Number(f.revenue ?? 0),
       0,
@@ -155,27 +294,62 @@ export default function AdminDashboard() {
     const todayOrders = orders.filter((o) =>
       isSameDay(new Date(o.createdAt), now),
     );
-    const todayOnline = todayCompleted.filter(
-      (o) => o.paymentMethod === 'ONLINE',
-    ).length;
-    const todayCash = todayCompleted.length - todayOnline;
+    // Match staff Shift Orders: payment split counts all orders in today's range
+    const todayRangeCount = todayOrders.length + partyToday.length;
+    const todayOnline =
+      todayOrders.filter((o) => o.paymentMethod === 'ONLINE').length +
+      partyToday.filter((p) => p.paymentMethod === 'ONLINE').length;
+    const todayCash = todayRangeCount - todayOnline;
 
-    const flavorCounts = new Map<string, number>();
-    for (const order of todayCompleted) {
+    const allTimeFlavorCounts = new Map<string, number>();
+    for (const order of completed) {
       for (const item of order.items ?? []) {
         const name = item.flavor?.name ?? 'Unknown';
-        flavorCounts.set(
+        allTimeFlavorCounts.set(
           name,
-          (flavorCounts.get(name) ?? 0) + Number(item.quantity ?? 0),
+          (allTimeFlavorCounts.get(name) ?? 0) + Number(item.quantity ?? 0),
         );
       }
     }
-    const topToday = [...flavorCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topBestsellers = [...allTimeFlavorCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
 
-    const totalRevenueSoFar = completed.reduce(
+    const retailRevenueSoFar = completed.reduce(
       (s, o) => s + Number(o.total ?? 0),
       0,
     );
+    const partyRevenueSoFar = sumPartyEarnings(partyOrders);
+    const totalRevenueSoFar = retailRevenueSoFar + partyRevenueSoFar;
+
+    const totalExpenses = expenses.reduce(
+      (sum, row) => sum + Number(row.amount ?? 0),
+      0,
+    );
+
+    const calendarYear = now.getFullYear();
+    const yearCompleted = completed.filter((o) =>
+      isSameYear(o.createdAt, calendarYear),
+    );
+    const partyYear = partyOrders.filter((p) =>
+      isSameYear(p.createdAt, calendarYear),
+    );
+    const yearRevenue =
+      yearCompleted.reduce((s, o) => s + Number(o.total ?? 0), 0) +
+      sumPartyEarnings(partyYear);
+    const yearExpenses = expenses
+      .filter((row) => {
+        const raw = row.expenseDate ?? row.createdAt;
+        return raw ? isSameYear(raw, calendarYear) : false;
+      })
+      .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+    const yearNet = yearRevenue - yearExpenses;
+
+    const totalInvestment = totalProcurementAllTime + totalExpenses;
+    const netAllTime = totalRevenueSoFar - totalInvestment;
+
+    const attentionCount =
+      pendingOnline.length + pendingCash.length + lowStock.length;
 
     const inactiveFlavors = monthlyFlavors.filter((f) => f.isActive === false)
       .length;
@@ -197,18 +371,50 @@ export default function AdminDashboard() {
       monthLabel,
       todayOnline,
       todayCash,
-      todayCompletedCount: todayCompleted.length,
-      topToday,
+      todayCompletedCount:
+        todayCompleted.length + partyToday.length,
+      topBestsellers,
       totalRevenueSoFar,
-      totalCompletedOrders: completed.length,
+      totalInvestment,
+      totalExpenses,
+      totalProcurementAllTime,
+      netAllTime,
+      calendarYear: now.getFullYear(),
+      yearRevenue,
+      yearExpenses,
+      yearNet,
+      yearCompletedCount: yearCompleted.length + partyYear.length,
+      attentionCount,
+      totalCompletedOrders: completed.length + partyOrders.length,
       inactiveFlavors,
       unitsProcured,
     };
-  }, [orders, lowStock, monthlyFlavors, monthLabel, now]);
+  }, [
+    orders,
+    partyOrders,
+    lowStock,
+    monthlyFlavors,
+    monthLabel,
+    expenses,
+    totalProcurementAllTime,
+  ]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!consumeLoginRevenueCelebrationCheck()) return;
+    if (shouldShowRevenueCelebration(insights.totalRevenueSoFar)) {
+      setShowRevenueCelebration(true);
+    }
+  }, [loading, insights.totalRevenueSoFar]);
+
+  const handleCelebrationAcknowledge = () => {
+    acknowledgeRevenueMilestone();
+    setShowRevenueCelebration(false);
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br to-indigo-50">
+      <div className="flex items-center justify-center px-4 py-24 text-slate-600">
         Loading dashboard…
       </div>
     );
@@ -222,12 +428,16 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-gradient-to-br to-indigo-50 text-gray-800">
-      <Header />
-
+      {showRevenueCelebration && (
+        <RevenueMilestoneCelebration
+          totalRevenue={insights.totalRevenueSoFar}
+          onAcknowledge={handleCelebrationAcknowledge}
+        />
+      )}
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <div className="rounded-[2rem] bg-gradient-to-r from-[#00a8c5] to-[#63d471] p-6 sm:p-8">
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-white/80">
-            {now.toLocaleDateString('en-IN', {
+            {new Date().toLocaleDateString('en-IN', {
               weekday: 'long',
               day: 'numeric',
               month: 'long',
@@ -256,18 +466,14 @@ export default function AdminDashboard() {
               {insights.revenueDelta}
             </p>
             <p className="mt-2 text-xs text-slate-400">
-              {insights.todayCompletedCount} completed ·{' '}
-              {insights.todayOrderCount} total today
+              {insights.todayCompletedCount} completed (retail + bulk) ·{' '}
+              {insights.todayOrderCount} retail today
             </p>
           </div>
 
-    
-
-
-
           <div className="rounded-2xl bg-white p-5 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {insights.monthLabel} — sales vs procurement
+              {insights.monthLabel} — sales vs investment
             </p>
             <p className="mt-2 text-3xl font-bold text-pink-600">
               {formatCurrency(insights.monthSales)}
@@ -277,30 +483,57 @@ export default function AdminDashboard() {
               {insights.unitsProcured} units stocked)
             </p>
           </div>
+      
           <div className="rounded-2xl bg-white p-5 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Total revenue so far
+              {insights.calendarYear} — sales vs investment
             </p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">
-              {formatCurrency(insights.totalRevenueSoFar)}
+            <p className="mt-2 text-3xl font-bold text-teal-700">
+              {formatCurrency(insights.yearRevenue)}
             </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {insights.totalCompletedOrders} completed order
-              {insights.totalCompletedOrders !== 1 ? 's' : ''} all time
+            <p className="mt-1 text-sm text-slate-600">
+              vs {formatCurrency(insights.yearExpenses)} expenses this year
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              <span
+                className={
+                  insights.yearNet >= 0
+                    ? 'font-semibold text-emerald-600'
+                    : 'font-semibold text-red-600'
+                }
+              >
+                {insights.yearNet >= 0 ? '+' : ''}
+                {formatCurrency(insights.yearNet)} net
+              </span>
+              {' · '}
+              {insights.yearCompletedCount} orders in {insights.calendarYear}
             </p>
           </div>
           <div className="rounded-2xl bg-white p-5 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Needs attention
+              All time — sales vs investment
             </p>
-            <p className="mt-2 text-3xl font-bold text-amber-600">
-              {insights.pendingOnline.length +
-                insights.pendingCash.length +
-                insights.lowStock.length}
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {formatCurrency(insights.totalRevenueSoFar)}
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              {insights.pendingOnline.length} online pending ·{' '}
-              {insights.lowStock.length} low stock
+              vs {formatCurrency(insights.totalInvestment)} invested (
+              {formatCurrency(insights.totalProcurementAllTime)} stock-in ·{' '}
+              {formatCurrency(insights.totalExpenses)} expenses)
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              <span
+                className={
+                  insights.netAllTime >= 0
+                    ? 'font-semibold text-emerald-600'
+                    : 'font-semibold text-red-600'
+                }
+              >
+                {insights.netAllTime >= 0 ? '+' : ''}
+                {formatCurrency(insights.netAllTime)} net
+              </span>
+              {' · '}
+              {insights.totalCompletedOrders} orders (retail + bulk)
             </p>
           </div>
         </div>
@@ -316,7 +549,7 @@ export default function AdminDashboard() {
             <div className="mt-6 grid gap-5 sm:grid-cols-2">
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                 <p className="text-sm font-medium text-slate-700">
-                  Payment mix (completed today)
+                  Payment mix (today&apos;s orders)
                 </p>
                 <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-200">
                   <div
@@ -336,17 +569,32 @@ export default function AdminDashboard() {
 
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                 <p className="text-sm font-medium text-slate-700">
-                  Best seller today
+                  Bestsellers
                 </p>
-                <p className="mt-2 text-xl font-bold text-slate-900">
-                  {insights.topToday
-                    ? insights.topToday[0]
-                    : 'No sales yet'}
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Top 5 · all completed retail orders
                 </p>
-                {insights.topToday && (
-                  <p className="mt-1 text-sm text-slate-500">
-                    {insights.topToday[1]} units sold
-                  </p>
+                {insights.topBestsellers.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-500">No sales yet</p>
+                ) : (
+                  <ol className="mt-3 space-y-2">
+                    {insights.topBestsellers.map(([name, units], index) => (
+                      <li
+                        key={name}
+                        className="flex items-center justify-between gap-2 text-sm"
+                      >
+                        <span className="min-w-0 truncate font-medium text-slate-800">
+                          <span className="mr-1.5 font-bold text-teal-600">
+                            {index + 1}.
+                          </span>
+                          {name}
+                        </span>
+                        <span className="shrink-0 font-semibold text-slate-600">
+                          {units} units
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
                 )}
               </div>
 
@@ -362,7 +610,7 @@ export default function AdminDashboard() {
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              {/* <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                 <p className="text-sm font-medium text-slate-700">
                   Month procurement
                 </p>
@@ -372,7 +620,7 @@ export default function AdminDashboard() {
                 <p className="mt-1 text-sm text-slate-500">
                   Stock-in value — see line items on Flavors
                 </p>
-              </div>
+              </div> */}
             </div>
           </section>
 
@@ -381,9 +629,19 @@ export default function AdminDashboard() {
             <h2 className="text-lg font-semibold text-slate-900">
               Attention Queue
             </h2>
-            <p className="text-sm text-slate-500">
-              Open the full page for details.
-            </p>
+            {insights.attentionCount > 0 ? (
+              <p className="mt-1 text-sm font-medium text-red-600">
+                <span className="font-bold">{insights.attentionCount}</span> need
+                attention · {insights.pendingOnline.length} online pending ·{' '}
+                {insights.pendingCash.length} cash pending ·{' '}
+                {insights.lowStock.length} low stock
+              </p>
+            ) : (
+              <p className="mt-1 text-sm font-medium text-emerald-600">
+                Nothing urgent — you&apos;re all caught up.
+              </p>
+            )}
+           
 
             <div className="mt-5 space-y-4">
               {insights.pendingOnline.length > 0 && (
@@ -469,10 +727,10 @@ export default function AdminDashboard() {
               color: 'bg-yellow-100',
             },
             {
-              title: 'Inventory',
-              desc: 'Live stock levels across all items',
+              title: 'Expenses',
+              desc: 'Shop expenses, amounts & SPOC tracking',
               path: '/admin/inventory',
-              icon: '📦',
+              icon: '💰',
               color: 'bg-orange-100',
             },
             {

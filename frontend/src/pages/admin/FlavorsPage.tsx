@@ -1,14 +1,23 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import Header from '../../components/Layout/Header';
+import ActionFeedback from '../../components/ActionFeedback';
+import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 import {
   useEffect,
   useMemo,
   useState,
 } from 'react';
 import { Plus, Eye, EyeOff } from 'lucide-react';
+import TableRefreshButton from '../../components/TableRefreshButton';
 import { API_BASE_URL } from '../../config/env';
 import { sortByName } from '../../utils/sortByName';
+import {
+  isLowStock,
+  sortColumnIcon,
+  sortFlavorList,
+  type FlavorListSortKey,
+  type SortDirection,
+} from '../../utils/flavorListSort';
 
 const MONTH_NAMES = [
   'January',
@@ -25,7 +34,52 @@ const MONTH_NAMES = [
   'December',
 ] as const;
 
+const MONTH_ABBR = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
 type MonthName = (typeof MONTH_NAMES)[number];
+
+const FLAVORS_PER_PAGE = 10;
+
+const BASE_FLAVOR_CATEGORIES = [
+  'Popsicles',
+  'Sugar Free',
+  'Cones',
+  '100 ML',
+  '500 ML',
+  'SIP UPS',
+  'Sorbet',
+] as const;
+
+const RequiredMark = () => (
+  <span className="text-red-500" aria-hidden>
+    {' '}
+    *
+  </span>
+);
+
+const emptyNewFlavorForm = () => ({
+  name: '',
+  category: '',
+  description: '',
+  price: 0,
+  stock: 0,
+  image: '',
+  isActive: true,
+  isSeasonal: false,
+});
 
 type FlavorItem = {
   id: number;
@@ -70,8 +124,18 @@ export default function Flavors() {
 
   const [error, setError] = useState('');
 
-  const [sortBy, setSortBy] =
-    useState('name');
+  const [sortBy, setSortBy] = useState<FlavorListSortKey>('name');
+  const [sortDir, setSortDir] = useState<SortDirection>('asc');
+  const [page, setPage] = useState(1);
+
+  const toggleColumnSort = (key: FlavorListSortKey) => {
+    if (sortBy === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortBy(key);
+    setSortDir('asc');
+  };
 
   const [showCreateModal, setShowCreateModal] =
     useState<boolean>(false);
@@ -88,18 +152,30 @@ export default function Flavors() {
   const [yearsLoading, setYearsLoading] =
     useState(true);
 
-  const [newFlavor, setNewFlavor] =
-    useState({
-      name: '',
-      category: '',
-      description: '',
-      price: 0,
-      stock: 0,
-      minStock: 0,
-      image: '',
-      isActive: true,
-      isSeasonal: false,
-    });
+  const [newFlavor, setNewFlavor] = useState(emptyNewFlavorForm);
+
+  const { feedback: createFeedback, setFeedback: setCreateFeedback } =
+    useTimedFeedback();
+  const { feedback: stockRowFeedback, setFeedback: setStockRowFeedback } =
+    useTimedFeedback();
+  const [stockRowFeedbackId, setStockRowFeedbackId] = useState<number | null>(
+    null,
+  );
+  const { feedback: statusRowFeedback, setFeedback: setStatusRowFeedback } =
+    useTimedFeedback();
+  const [statusRowFeedbackId, setStatusRowFeedbackId] = useState<number | null>(
+    null,
+  );
+  const [stockAdjustId, setStockAdjustId] = useState<number | null>(null);
+  const [stockAdjustQty, setStockAdjustQty] = useState('1');
+
+  useEffect(() => {
+    if (!stockRowFeedback) setStockRowFeedbackId(null);
+  }, [stockRowFeedback]);
+
+  useEffect(() => {
+    if (!statusRowFeedback) setStatusRowFeedbackId(null);
+  }, [statusRowFeedback]);
 
   /*
   =========================================
@@ -145,18 +221,26 @@ export default function Flavors() {
   const selectedMonthNum = getMonthNumber(selectedMonth);
   const selectedIsFutureMonth = isFutureMonth(selectedYear, selectedMonthNum);
 
-  const categories = [
-    'All',
-    ...[
-      'Popsicles',
-      'Sugar Free',
-      'Cones',
-      '100 ML',
-      '500 ML',
-      'SIP UPS',
-      'Sorbet',
-    ].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' })),
-  ];
+  const categories = useMemo(
+    () => [
+      'All',
+      ...[...BASE_FLAVOR_CATEGORIES].sort((a, b) =>
+        a.localeCompare(b, 'en', { sensitivity: 'base' }),
+      ),
+    ],
+    [],
+  );
+
+  const flavorCategoryOptions = useMemo(() => {
+    const merged = new Set<string>(BASE_FLAVOR_CATEGORIES);
+    data.forEach((item) => {
+      const cat = item.category?.trim();
+      if (cat) merged.add(cat);
+    });
+    return Array.from(merged).sort((a, b) =>
+      a.localeCompare(b, 'en', { sensitivity: 'base' }),
+    );
+  }, [data]);
 
   /*
   =========================================
@@ -409,11 +493,19 @@ export default function Flavors() {
       const result = await response.json();
 
       if (!response.ok) {
-        alert(
-          `Stock update failed: ${result?.message || response.statusText}`
-        );
+        setStockRowFeedbackId(id);
+        setStockRowFeedback({
+          type: 'error',
+          message: `Stock update failed: ${result?.message || response.statusText}`,
+        });
         return;
       }
+
+      setStockRowFeedbackId(id);
+      setStockRowFeedback({
+        type: 'success',
+        message: 'Stock updated',
+      });
 
       setData((prev) =>
         prev.map((item) => {
@@ -435,9 +527,27 @@ export default function Flavors() {
       );
 
       refreshFlavors();
-    } catch (err) {
-      alert('Stock update failed');
+    } catch {
+      setStockRowFeedbackId(id);
+      setStockRowFeedback({
+        type: 'error',
+        message: 'Stock update failed',
+      });
     }
+  };
+
+  const applyStockAdjust = (id: number) => {
+    const quantity = Number(stockAdjustQty);
+    if (Number.isNaN(quantity) || quantity <= 0) {
+      setStockRowFeedbackId(id);
+      setStockRowFeedback({
+        type: 'error',
+        message: 'Enter valid quantity',
+      });
+      return;
+    }
+    setStockAdjustId(null);
+    void adjustStock(id, quantity);
   };
 
   const toggleFlavorActive = async (
@@ -457,8 +567,12 @@ export default function Flavors() {
       });
 
       refreshFlavors();
-    } catch (err) {
-      alert('Failed to update flavor status');
+    } catch {
+      setStatusRowFeedbackId(id);
+      setStatusRowFeedback({
+        type: 'error',
+        message: 'Failed to update flavor status',
+      });
     }
   };
 
@@ -478,34 +592,30 @@ export default function Flavors() {
             selectedCategory
         );
 
-    switch (sortBy) {
-      case 'price':
-        filtered.sort(
-          (a, b) => b.price - a.price
-        );
-        break;
+    return sortFlavorList(filtered, sortBy, sortDir);
+  }, [selectedCategory, data, sortBy, sortDir]);
 
-      case 'quantity':
-        filtered.sort(
-          (a, b) =>
-            b.quantity - a.quantity
-        );
-        break;
+  useEffect(() => {
+    setPage(1);
+  }, [selectedCategory, selectedMonth, selectedYear, sortBy, sortDir]);
 
-      case 'revenue':
-        filtered.sort(
-          (a, b) =>
-            b.revenue - a.revenue
-        );
-        break;
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredData.length / FLAVORS_PER_PAGE),
+  );
 
-      case 'name':
-      default:
-        return sortByName(filtered);
-    }
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
-    return filtered;
-  }, [selectedCategory, data, sortBy]);
+  const paginatedData = useMemo(() => {
+    const start = (page - 1) * FLAVORS_PER_PAGE;
+    return filteredData.slice(start, start + FLAVORS_PER_PAGE);
+  }, [filteredData, page]);
+
+  const pageStart =
+    filteredData.length === 0 ? 0 : (page - 1) * FLAVORS_PER_PAGE + 1;
+  const pageEnd = Math.min(page * FLAVORS_PER_PAGE, filteredData.length);
 
   const totalMonthlyInvested = useMemo(
     () =>
@@ -529,142 +639,142 @@ export default function Flavors() {
       : `No data found for ${selectedMonth} ${selectedYear}`;
 
   return (
-    <div className="min-h-screen bg-[#fafafa]">
-      <Header />
+    <div className="bg-[#fafafa]">
 
-      {/* HERO */}
-      <section className="mx-6 mt-6 rounded-[30px] overflow-hidden bg-gradient-to-r from-[#8bd8bf] to-[#33c3b3]">
-        <div className="py-16 text-center text-white">
+      {createFeedback && !showCreateModal ? (
+        <div className="mx-auto max-w-7xl px-4 pt-3">
+          <ActionFeedback feedback={createFeedback} />
+        </div>
+      ) : null}
+
+      {/* HERO — compact */}
+      {/* <section className="mx-4 mt-4 overflow-hidden rounded-2xl bg-gradient-to-r from-[#8bd8bf] to-[#33c3b3] sm:mx-6 sm:mt-5">
+        <div className="px-4 py-7 text-center text-white sm:py-9">
           <h1
-            className="text-5xl font-bold"
-            style={{
-              fontFamily: 'cursive',
-            }}
+            className="text-3xl font-bold sm:text-4xl"
+            style={{ fontFamily: 'cursive' }}
           >
             Our Flavors
           </h1>
+          <p className="mt-1.5 text-sm text-white/90 sm:text-base">
+            Handcrafted ice cream — browse by month & category
+          </p> */}
+        {/* </div>
+      </section> */}
 
-          <p className="mt-4 text-lg text-white/90">
-            Explore our complete collection
-            of handcrafted ice cream
-          </p>
-        </div>
-      </section>
+      <main className="mx-auto max-w-7xl px-4 py-5 sm:py-6">
+        {/* Toolbar: period summary, filters, scrollable months */}
+        <div className="mb-5 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Viewing
+              </p>
+              <p className="truncate text-sm font-semibold text-gray-800">
+                {selectedMonth}
+                {isCurrentMonth(
+                  selectedYear,
+                  getMonthNumber(selectedMonth),
+                )
+                  ? ' (now)'
+                  : ''}{' '}
+                · {selectedYear}
+                {selectedCategory !== 'All'
+                  ? ` · ${selectedCategory}`
+                  : ''}
+              </p>
+            </div>
 
-      <main className="mx-auto max-w-7xl px-4 py-8">
-        {/* MONTHS */}
-        <div className="flex flex-wrap gap-3 mb-8">
-          {months.map((month) => {
-            const active =
-              selectedMonth === month;
-            const isNow = isCurrentMonth(
-              selectedYear,
-              getMonthNumber(month),
-            );
-
-            return (
-              <button
-                key={month}
-                onClick={() =>
-                  setSelectedMonth(month)
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <select
+                value={selectedCategory}
+                onChange={(e) =>
+                  setSelectedCategory(e.target.value)
                 }
-                className={`
-                  px-5 py-2 rounded-full text-sm border transition
-
-                  ${active
-                    ? 'bg-teal-500 text-white border-teal-500'
-                    : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400'
-                  }
-                `}
+                className="min-w-[7rem] shrink-0 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none focus:border-teal-400 focus:bg-white"
+                aria-label="Filter by category"
               >
-                {month}
-                {isNow ? ' (now)' : ''}
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedYear}
+                onChange={(e) =>
+                  setSelectedYear(Number(e.target.value))
+                }
+                className="min-w-[5.5rem] shrink-0 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none focus:border-teal-400 focus:bg-white disabled:opacity-60"
+                disabled={yearsLoading}
+                aria-label="Filter by year"
+              >
+                {yearsLoading ? (
+                  <option>Loading years...</option>
+                ) : availableYears.length > 0 ? (
+                  availableYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))
+                ) : (
+                  <option>No years available</option>
+                )}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(true)}
+                className="shrink-0 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-teal-600"
+              >
+                + Add Flavor
               </button>
-            );
-          })}
-        </div>
+            </div>
+          </div>
 
+          <div className="mt-3 border-t border-gray-100 pt-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Month
+            </p>
+            <div className="overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex min-w-max gap-1.5">
+                {months.map((month, index) => {
+                  const active = selectedMonth === month;
+                  const isNow = isCurrentMonth(
+                    selectedYear,
+                    getMonthNumber(month),
+                  );
 
-        {/* ACTIONS */}
-        <div className="flex justify-end mb-6">
-          {/* FILTERS */}
-
-          {/* CATEGORY */}
-          <select
-            value={selectedCategory}
-            onChange={(e) =>
-              setSelectedCategory(
-                e.target.value
-              )
-            }
-            className="border border-gray-200 rounded-xl px-4 py-3 bg-white"
-          >
-            {categories.map((category) => (
-              <option
-                key={category}
-                value={category}
-              >
-                {category}
-              </option>
-            ))}
-          </select>
-
-          {/* YEAR */}
-          <select
-            value={selectedYear}
-            onChange={(e) =>
-              setSelectedYear(
-                Number(e.target.value)
-              )
-            }
-            className="border border-gray-200 rounded-xl px-4 py-3 bg-white"
-            disabled={yearsLoading}
-          >
-            {yearsLoading ? (
-              <option>Loading years...</option>
-            ) : availableYears.length > 0 ? (
-              availableYears.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))
-            ) : (
-              <option>No years available</option>
-            )}
-          </select>
-
-          {/* SORT */}
-          <select
-            value={sortBy}
-            onChange={(e) =>
-              setSortBy(e.target.value)
-            }
-            className="border border-gray-200 rounded-xl px-4 py-3 bg-white"
-          >
-            <option value="name">
-              Sort by Name
-            </option>
-
-            <option value="price">
-              Sort by Price
-            </option>
-
-            <option value="quantity">
-              Sort by Quantity
-            </option>
-
-            <option value="revenue">
-              Sort by Revenue
-            </option>
-          </select>
-
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="bg-teal-500 hover:bg-teal-600 text-black px-5 py-3 rounded-xl"
-          >
-            + Add Flavor
-          </button>
+                  return (
+                    <button
+                      key={month}
+                      type="button"
+                      title={
+                        isNow ? `${month} (current month)` : month
+                      }
+                      onClick={() => setSelectedMonth(month)}
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition sm:px-3 sm:py-1.5 ${
+                        active
+                          ? 'border-teal-500 bg-teal-500 text-white'
+                          : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-teal-400 hover:bg-white'
+                      }`}
+                    >
+                      {MONTH_ABBR[index]}
+                      {isNow && (
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                            active ? 'bg-white' : 'bg-teal-500'
+                          }`}
+                          aria-hidden
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* CREATE MODAL */}
@@ -681,74 +791,98 @@ export default function Flavors() {
               <div className="p-8 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
-                    <label className="text-sm text-gray-500 mb-2 block">Flavor Name</label>
+                    <label className="mb-2 block text-sm text-gray-500">
+                      Flavor Name
+                      <RequiredMark />
+                    </label>
                     <input
                       type="text"
+                      required
                       value={newFlavor.name}
                       onChange={(e) =>
                         setNewFlavor({ ...newFlavor, name: e.target.value })
                       }
-                      className="w-full border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-teal-400"
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none focus:border-teal-400"
                     />
                   </div>
 
                   <div>
-                    <label className="text-sm text-gray-500 mb-2 block">Category</label>
-                    <input
-                      type="text"
+                    <label className="mb-2 block text-sm text-gray-500">
+                      Category
+                      <RequiredMark />
+                    </label>
+                    <select
+                      required
                       value={newFlavor.category}
                       onChange={(e) =>
-                        setNewFlavor({ ...newFlavor, category: e.target.value })
+                        setNewFlavor({
+                          ...newFlavor,
+                          category: e.target.value,
+                        })
                       }
-                      className="w-full border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-teal-400"
-                    />
+                      className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-gray-800 outline-none focus:border-teal-400"
+                    >
+                      <option value="">Select category</option>
+                      {flavorCategoryOptions.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
-                    <label className="text-sm text-gray-500 mb-2 block">Price</label>
+                    <label className="mb-2 block text-sm text-gray-500">
+                      Price
+                      <RequiredMark />
+                    </label>
                     <input
                       type="number"
+                      min={0}
+                      required
                       value={newFlavor.price}
                       onChange={(e) =>
-                        setNewFlavor({ ...newFlavor, price: Number(e.target.value) })
+                        setNewFlavor({
+                          ...newFlavor,
+                          price: Number(e.target.value),
+                        })
                       }
-                      className="w-full border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-teal-400"
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none focus:border-teal-400"
                     />
                   </div>
 
                   <div>
-                    <label className="text-sm text-gray-500 mb-2 block">Stock</label>
+                    <label className="mb-2 block text-sm text-gray-500">
+                      Stock
+                      <RequiredMark />
+                    </label>
                     <input
                       type="number"
+                      min={0}
+                      required
                       value={newFlavor.stock}
                       onChange={(e) =>
-                        setNewFlavor({ ...newFlavor, stock: Number(e.target.value) })
+                        setNewFlavor({
+                          ...newFlavor,
+                          stock: Number(e.target.value),
+                        })
                       }
-                      className="w-full border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-teal-400"
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none focus:border-teal-400"
                     />
                   </div>
 
-                  <div>
-                    <label className="text-sm text-gray-500 mb-2 block">Minimum Stock</label>
+                  <div className="md:col-span-2">
+                    <label className="mb-2 block text-sm text-gray-500">
+                      Image URL <span className="text-gray-400">(optional)</span>
+                    </label>
                     <input
-                      type="number"
-                      value={newFlavor.minStock}
-                      onChange={(e) =>
-                        setNewFlavor({ ...newFlavor, minStock: Number(e.target.value) })
-                      }
-                      className="w-full border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-teal-400"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-sm text-gray-500 mb-2 block">Image URL</label>
-                    <input
-                      type="text"
+                      type="url"
                       value={newFlavor.image}
                       onChange={(e) =>
                         setNewFlavor({ ...newFlavor, image: e.target.value })
                       }
-                      className="w-full border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-teal-400"
+                      placeholder="https://..."
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none focus:border-teal-400"
                     />
                   </div>
                 </div>
@@ -785,9 +919,13 @@ export default function Flavors() {
                   </label>
                 </div>
 
-                <div className="flex justify-end gap-4 pt-4">
+                <div className="flex flex-col items-end gap-2 pt-4">
+                  <div className="flex justify-end gap-4">
                   <button
-                    onClick={() => setShowCreateModal(false)}
+                    onClick={() => {
+                      setShowCreateModal(false);
+                      setCreateFeedback(null);
+                    }}
                     className="px-6 py-3 rounded-2xl border border-gray-200 hover:bg-gray-100 transition"
                   >
                     Cancel
@@ -795,45 +933,97 @@ export default function Flavors() {
 
                   <button
                     onClick={async () => {
+                      const name = newFlavor.name.trim();
+                      if (!name) {
+                        setCreateFeedback({
+                          type: 'error',
+                          message: 'Flavor name is required',
+                        });
+                        return;
+                      }
+                      if (!newFlavor.category) {
+                        setCreateFeedback({
+                          type: 'error',
+                          message: 'Please select a category',
+                        });
+                        return;
+                      }
+                      if (Number(newFlavor.price) < 0) {
+                        setCreateFeedback({
+                          type: 'error',
+                          message: 'Price must be 0 or greater',
+                        });
+                        return;
+                      }
+                      if (Number(newFlavor.stock) < 0) {
+                        setCreateFeedback({
+                          type: 'error',
+                          message: 'Stock must be 0 or greater',
+                        });
+                        return;
+                      }
+
+                      const payload: Record<string, unknown> = {
+                        name,
+                        category: newFlavor.category,
+                        price: Number(newFlavor.price),
+                        stock: Number(newFlavor.stock),
+                        isActive: newFlavor.isActive,
+                        isSeasonal: newFlavor.isSeasonal,
+                      };
+
+                      const description = newFlavor.description.trim();
+                      if (description) payload.description = description;
+
+                      const image = newFlavor.image.trim();
+                      if (image) payload.image = image;
+
                       try {
+                        setCreateFeedback(null);
                         const response = await fetch(API_URL, {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',
                             Authorization: `Bearer ${token}`,
                           },
-                          body: JSON.stringify(newFlavor),
+                          body: JSON.stringify(payload),
                         });
 
                         if (!response.ok) {
-                          throw new Error('Failed to create flavor');
+                          const errBody = await response.json().catch(() => null);
+                          const msg =
+                            typeof errBody?.message === 'string'
+                              ? errBody.message
+                              : Array.isArray(errBody?.message)
+                                ? errBody.message.join(', ')
+                                : 'Failed to create flavor';
+                          throw new Error(msg);
                         }
 
                         fetchFlavors();
 
                         setShowCreateModal(false);
-
-                        setNewFlavor({
-                          name: '',
-                          category: '',
-                          description: '',
-                          price: 0,
-                          stock: 0,
-                          minStock: 0,
-                          image: '',
-                          isActive: true,
-                          isSeasonal: false,
+                        setNewFlavor(emptyNewFlavorForm());
+                        setCreateFeedback({
+                          type: 'success',
+                          message: 'Flavor created',
                         });
-
-                        alert('Flavor created!');
                       } catch (err) {
-                        alert('Create failed');
+                        setCreateFeedback({
+                          type: 'error',
+                          message:
+                            err instanceof Error
+                              ? err.message
+                              : 'Create failed',
+                        });
                       }
                     }}
                     className="px-6 py-3 rounded-2xl bg-teal-500 hover:bg-teal-600 text-white transition"
                   >
                     Create Flavor
                   </button>
+                  </div>
+                  <ActionFeedback feedback={createFeedback} />
                 </div>
               </div>
             </div>
@@ -856,6 +1046,13 @@ export default function Flavors() {
 
         {/* TABLE */}
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex items-center justify-end gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2 sm:px-6">
+            <TableRefreshButton
+              loading={loading}
+              onRefresh={refreshFlavors}
+              label="Refresh flavors"
+            />
+          </div>
           {!loading && isFilteringByMonth && (
             <div className="border-b border-teal-100 bg-teal-50 px-6 py-3">
               <p className="text-sm text-red-500">
@@ -892,40 +1089,172 @@ export default function Flavors() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="text-left px-6 py-4 text-sm font-medium text-gray-600">
-                    Flavour
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortBy === 'name'
+                        ? sortDir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-6 py-4 text-left text-sm font-medium text-gray-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnSort('name')}
+                      className="inline-flex items-center gap-2 font-semibold text-slate-700 hover:text-slate-900"
+                    >
+                      Flavour{' '}
+                      <span className="text-[0.7rem]">
+                        {sortColumnIcon('name', sortBy, sortDir)}
+                      </span>
+                    </button>
                   </th>
 
-                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
-                    Category
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortBy === 'category'
+                        ? sortDir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-6 py-4 text-center text-sm font-medium text-gray-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnSort('category')}
+                      className="mx-auto inline-flex items-center gap-2 font-semibold text-slate-700 hover:text-slate-900"
+                    >
+                      Category{' '}
+                      <span className="text-[0.7rem]">
+                        {sortColumnIcon('category', sortBy, sortDir)}
+                      </span>
+                    </button>
                   </th>
 
-                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
-                    Quantity
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortBy === 'carryForwarded'
+                        ? sortDir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-6 py-4 text-center text-sm font-medium text-gray-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnSort('carryForwarded')}
+                      className="mx-auto inline-flex items-center gap-2 font-semibold text-slate-700 hover:text-slate-900"
+                    >
+                      Carry Forwarded{' '}
+                      <span className="text-[0.7rem]">
+                        {sortColumnIcon('carryForwarded', sortBy, sortDir)}
+                      </span>
+                    </button>
                   </th>
 
-                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
-                    Carry Forwarded
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortBy === 'quantity'
+                        ? sortDir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-6 py-4 text-center text-sm font-medium text-gray-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnSort('quantity')}
+                      className="mx-auto inline-flex items-center gap-2 font-semibold text-slate-700 hover:text-slate-900"
+                    >
+                  Restocked Quantity{' '}
+                      <span className="text-[0.7rem]">
+                        {sortColumnIcon('quantity', sortBy, sortDir)}
+                      </span>
+                    </button>
                   </th>
 
-                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
-                    Current Stock
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortBy === 'stock'
+                        ? sortDir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-6 py-4 text-center text-sm font-medium text-gray-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnSort('stock')}
+                      className="mx-auto inline-flex items-center gap-2 font-semibold text-slate-700 hover:text-slate-900"
+                    >
+                      Current Stock{' '}
+                      <span className="text-[0.7rem]">
+                        {sortColumnIcon('stock', sortBy, sortDir)}
+                      </span>
+                    </button>
                   </th>
 
-                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
-                    Price Per Unit
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortBy === 'price'
+                        ? sortDir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-6 py-4 text-center text-sm font-medium text-gray-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnSort('price')}
+                      className="mx-auto inline-flex items-center gap-2 font-semibold text-slate-700 hover:text-slate-900"
+                    >
+                      Price Per Unit{' '}
+                      <span className="text-[0.7rem]">
+                        {sortColumnIcon('price', sortBy, sortDir)}
+                      </span>
+                    </button>
                   </th>
 
-                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
-                    Invested Amount
-
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortBy === 'revenue'
+                        ? sortDir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-6 py-4 text-center text-sm font-medium text-gray-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnSort('revenue')}
+                      className="mx-auto inline-flex items-center gap-2 font-semibold text-slate-700 hover:text-slate-900"
+                    >
+                      Invested Amount{' '}
+                      <span className="text-[0.7rem]">
+                        {sortColumnIcon('revenue', sortBy, sortDir)}
+                      </span>
+                    </button>
                   </th>
 
-                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
+                  <th className="px-6 py-4 text-center text-sm font-medium text-gray-600">
                     Sales Status
                   </th>
 
-                  <th className="text-center px-6 py-4 text-sm font-medium text-gray-600">
+                  <th className="px-6 py-4 text-center text-sm font-medium text-gray-600">
                     Actions
                   </th>
                 </tr>
@@ -933,7 +1262,7 @@ export default function Flavors() {
 
               <tbody>
                 {filteredData.length > 0 ? (
-                  filteredData.map((item) => (
+                  paginatedData.map((item) => (
                     <tr
                       key={item.id}
                       className="border-b border-gray-100 hover:bg-gray-50 transition"
@@ -947,14 +1276,20 @@ export default function Flavors() {
                       </td>
 
                       <td className="px-6 py-4 text-center text-gray-700">
-                        {item.quantity}
-                      </td>
-
-                      <td className="px-6 py-4 text-center text-gray-700">
                         {isFilteringByMonth ? item.carryForwarded ?? 0 : '—'}
                       </td>
 
                       <td className="px-6 py-4 text-center text-gray-700">
+                        {item.quantity}
+                      </td>
+
+                      <td
+                        className={`px-6 py-4 text-center font-semibold ${
+                          isLowStock(Number(item.stock ?? 0))
+                            ? 'text-red-600'
+                            : 'text-gray-700'
+                        }`}
+                      >
                         {item.stock ?? 0}
                       </td>
 
@@ -978,57 +1313,86 @@ export default function Flavors() {
                       </td>
 
                       <td className="px-6 py-4">
-                        <div className="flex justify-center gap-2">
-                          <button
-                            onClick={() => {
-                              const qty = prompt(
-                                `Enter quantity for ${item.name}`,
-                                '1'
-                              );
-
-                              if (!qty) return;
-
-                              const quantity = Number(qty);
-
-                              if (
-                                isNaN(quantity) ||
-                                quantity <= 0
-                              ) {
-                                alert('Enter valid quantity');
-                                return;
-                              }
-
-                              adjustStock(item.id, quantity);
-                            }}
-                            className="bg-blue-100 text-blue-600 px-3 py-1 rounded-lg text-sm hover:bg-blue-200 flex items-center gap-2"
-                          >
-                            <Plus size={16} />
-                            Add
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              toggleFlavorActive(
-                                item.id,
-                                item.isActive
-                              )
-                            }
-                            className={`px-3 py-1 rounded-lg text-sm transition ${item.isActive
-                              ? 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            title={
-                              item.isActive
-                                ? 'Disable flavor'
-                                : 'Enable flavor'
-                            }
-                          >
-                            {item.isActive ? (
-                              <Eye size={16} />
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="flex justify-center gap-2">
+                            {stockAdjustId === item.id ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={stockAdjustQty}
+                                  onChange={(e) =>
+                                    setStockAdjustQty(e.target.value)
+                                  }
+                                  className="w-14 rounded-lg border border-blue-200 px-2 py-1 text-sm outline-none focus:border-blue-400"
+                                  aria-label={`Quantity for ${item.name}`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => applyStockAdjust(item.id)}
+                                  className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                                >
+                                  OK
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setStockAdjustId(null)}
+                                  className="rounded-lg border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
                             ) : (
-                              <EyeOff size={16} />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStockAdjustId(item.id);
+                                  setStockAdjustQty('1');
+                                  setStockRowFeedback(null);
+                                  setStockRowFeedbackId(null);
+                                }}
+                                className="flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1 text-sm text-blue-600 hover:bg-blue-200"
+                              >
+                                <Plus size={16} />
+                                Add
+                              </button>
                             )}
-                          </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleFlavorActive(
+                                  item.id,
+                                  item.isActive
+                                )
+                              }
+                              className={`rounded-lg px-3 py-1 text-sm transition ${item.isActive
+                                ? 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                              title={
+                                item.isActive
+                                  ? 'Disable flavor'
+                                  : 'Enable flavor'
+                              }
+                            >
+                              {item.isActive ? (
+                                <Eye size={16} />
+                              ) : (
+                                <EyeOff size={16} />
+                              )}
+                            </button>
+                          </div>
+                          <ActionFeedback
+                            feedback={
+                              stockRowFeedbackId === item.id
+                                ? stockRowFeedback
+                                : statusRowFeedbackId === item.id
+                                  ? statusRowFeedback
+                                  : null
+                            }
+                            className="text-center"
+                          />
                         </div>
                       </td>
                     </tr>
@@ -1046,6 +1410,38 @@ export default function Flavors() {
               </tbody>
             </table>
           </div>
+
+          {!loading && filteredData.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <p className="text-xs text-gray-500">
+                {pageStart}–{pageEnd} of {filteredData.length} flavours ·{' '}
+                {FLAVORS_PER_PAGE} per page
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="min-w-[5rem] text-center text-xs font-semibold text-gray-700">
+                  {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() =>
+                    setPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  className="rounded-lg bg-teal-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
