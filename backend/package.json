@@ -14,7 +14,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main.js",
+    "start:prod": "node dist/src/main.js",
     "seed": "ts-node -r tsconfig-paths/register src/seed.ts",
     "db:migrate-ids": "ts-node -r tsconfig-paths/register scripts/run-migrate-ids.ts",
     "db:create-expenses": "ts-node -r tsconfig-paths/register scripts/run-create-expenses.ts",
