@@ -61,13 +61,19 @@ const isSameYear = (dateStr: string, year: number) => {
 const formatCurrency = (value: number) =>
   `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
-const formatDelta = (current: number, previous: number) => {
-  if (previous === 0) {
-    return current > 0 ? '+100%' : '—';
+const profitLossPct = (current: number, base: number) => {
+  if (base === 0) {
+    return current > 0 ? 100 : 0;
   }
-  const pct = Math.round(((current - previous) / previous) * 100);
-  if (pct === 0) return 'Same as yesterday';
-  return `${pct > 0 ? '+' : ''}${pct}% vs yesterday`;
+  return Math.round(((current - base) / base) * 100);
+};
+
+const marginPct = (profit: number, revenue: number) =>
+  revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+
+const formatPctLabel = (pct: number) => {
+  if (pct === 0) return '0%';
+  return `${pct > 0 ? '+' : ''}${pct}%`;
 };
 
 const isSameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
@@ -283,6 +289,17 @@ export default function AdminDashboard() {
       (s, f) => s + Number(f.revenue ?? 0),
       0,
     );
+    const monthExpenses = expenses
+      .filter((row) => {
+        const raw = row.expenseDate ?? row.createdAt;
+        return raw ? isSameMonth(new Date(raw), now) : false;
+      })
+      .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+    const monthNet = monthSales - monthProcurement - monthExpenses;
+    const monthGrossProfit = monthSales - monthProcurement;
+    const todayChangePct = profitLossPct(todayRevenue, yesterdayRevenue);
+    const monthGrossMarginPct = marginPct(monthGrossProfit, monthSales);
+    const monthNetMarginPct = marginPct(monthNet, monthSales);
 
     const pendingOnline = orders.filter(
       (o) => o.status === 'PENDING' && o.paymentMethod === 'ONLINE',
@@ -361,13 +378,16 @@ export default function AdminDashboard() {
 
     return {
       todayRevenue,
-      revenueDelta: formatDelta(todayRevenue, yesterdayRevenue),
+      todayChangePct,
       todayOrderCount: todayOrders.length,
       pendingOnline,
       pendingCash,
       lowStock,
       monthSales,
       monthProcurement,
+      monthNet,
+      monthGrossMarginPct,
+      monthNetMarginPct,
       monthLabel,
       todayOnline,
       todayCash,
@@ -453,105 +473,76 @@ export default function AdminDashboard() {
           </p>
         </div>
 
-        {/* KPI row — comparative / cross-cutting only */}
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Today&apos;s sales
-            </p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">
-              {formatCurrency(insights.todayRevenue)}
-            </p>
-            <p className="mt-1 text-sm text-emerald-600">
-              {insights.revenueDelta}
-            </p>
-            <p className="mt-2 text-xs text-slate-400">
-              {insights.todayCompletedCount} completed (retail + bulk) ·{' '}
-              {insights.todayOrderCount} retail today
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {insights.monthLabel} — sales vs investment
-            </p>
-            <p className="mt-2 text-3xl font-bold text-pink-600">
-              {formatCurrency(insights.monthSales)}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">
-              vs {formatCurrency(insights.monthProcurement)} invested (
-              {insights.unitsProcured} units stocked)
-            </p>
-          </div>
-      
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {insights.calendarYear} — sales vs investment
-            </p>
-            <p className="mt-2 text-3xl font-bold text-teal-700">
-              {formatCurrency(insights.yearRevenue)}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">
-              vs {formatCurrency(insights.yearExpenses)} expenses this year
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              <span
-                className={
-                  insights.yearNet >= 0
-                    ? 'font-semibold text-emerald-600'
-                    : 'font-semibold text-red-600'
-                }
-              >
-                {insights.yearNet >= 0 ? '+' : ''}
-                {formatCurrency(insights.yearNet)} net
-              </span>
-              {' · '}
-              {insights.yearCompletedCount} orders in {insights.calendarYear}
-            </p>
-          </div>
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              All time — sales vs investment
-            </p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">
-              {formatCurrency(insights.totalRevenueSoFar)}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">
-              vs {formatCurrency(insights.totalInvestment)} invested (
-              {formatCurrency(insights.totalProcurementAllTime)} stock-in ·{' '}
-              {formatCurrency(insights.totalExpenses)} expenses)
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              <span
-                className={
-                  insights.netAllTime >= 0
-                    ? 'font-semibold text-emerald-600'
-                    : 'font-semibold text-red-600'
-                }
-              >
-                {insights.netAllTime >= 0 ? '+' : ''}
-                {formatCurrency(insights.netAllTime)} net
-              </span>
-              {' · '}
-              {insights.totalCompletedOrders} orders (retail + bulk)
-            </p>
-          </div>
-        </div>
-
         <div className="mt-6 grid gap-6 lg:grid-cols-5">
-          {/* Operational insights — not on other admin pages */}
-          <section className="rounded-[2rem] bg-white p-6 shadow-sm lg:col-span-3">
+          <section className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-6 lg:col-span-3">
             <h2 className="text-lg font-semibold text-slate-900">
               Operational insights
             </h2>
-          
 
-            <div className="mt-6 grid gap-5 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            {/* KPI cards — compact, same style as insight tiles */}
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                <p className="text-xs font-medium text-slate-600">Today</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">
+                  {formatCurrency(insights.todayRevenue)}
+                </p>
+                <p
+                  className={`mt-0.5 text-xs font-semibold ${
+                    insights.todayChangePct >= 0
+                      ? 'text-emerald-600'
+                      : 'text-red-600'
+                  }`}
+                >
+                  {formatPctLabel(insights.todayChangePct)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                <p className="text-xs font-medium text-slate-600">Monthly</p>
+                <p className="mt-1 text-lg font-bold text-pink-600">
+                  {formatCurrency(insights.monthSales)}
+                </p>
+                <p
+                  className={`mt-0.5 text-xs font-semibold ${
+                    insights.monthGrossMarginPct >= 0
+                      ? 'text-emerald-600'
+                      : 'text-red-600'
+                  }`}
+                >
+                  {formatPctLabel(insights.monthGrossMarginPct)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                <p className="text-xs font-medium text-slate-600">
+                  Net profit · monthly
+                </p>
+                <p
+                  className={`mt-1 text-lg font-bold ${
+                    insights.monthNet >= 0 ? 'text-teal-700' : 'text-red-600'
+                  }`}
+                >
+                  {insights.monthNet >= 0 ? '+' : ''}
+                  {formatCurrency(insights.monthNet)}
+                </p>
+                <p
+                  className={`mt-0.5 text-xs font-semibold ${
+                    insights.monthNetMarginPct >= 0
+                      ? 'text-emerald-600'
+                      : 'text-red-600'
+                  }`}
+                >
+                  {formatPctLabel(insights.monthNetMarginPct)}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
                 <p className="text-sm font-medium text-slate-700">
                   Payment mix (today&apos;s orders)
                 </p>
-                <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-200">
+                <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-slate-200">
                   <div
                     className="bg-blue-500 transition-all"
                     style={{ width: `${onlinePct}%` }}
@@ -567,7 +558,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
                 <p className="text-sm font-medium text-slate-700">
                   Bestsellers
                 </p>
@@ -575,9 +566,9 @@ export default function AdminDashboard() {
                   Top 5 · all completed retail orders
                 </p>
                 {insights.topBestsellers.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-500">No sales yet</p>
+                  <p className="mt-2 text-sm text-slate-500">No sales yet</p>
                 ) : (
-                  <ol className="mt-3 space-y-2">
+                  <ol className="mt-2 space-y-1.5">
                     {insights.topBestsellers.map(([name, units], index) => (
                       <li
                         key={name}
@@ -598,14 +589,14 @@ export default function AdminDashboard() {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
                 <p className="text-sm font-medium text-slate-700">
                   Catalog health
                 </p>
-                <p className="mt-2 text-xl font-bold text-slate-900">
+                <p className="mt-1 text-lg font-bold text-slate-900">
                   {insights.inactiveFlavors} inactive
                 </p>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-0.5 text-xs text-slate-500">
                   Flavors hidden from POS this month
                 </p>
               </div>

@@ -21,6 +21,11 @@ export default function Sidebar() {
       path: '/admin/inventory',
     },
     {
+      label: 'Accounts',
+      icon: '📊',
+      path: '/admin/accounts',
+    },
+    {
       label: 'Orders',
       icon: '🛒',
       path: '/admin/orders',

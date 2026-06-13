@@ -3,6 +3,7 @@ import Header from './Header';
 import AdminDashboard from '../../pages/admin/AdminDashboard';
 import FlavorsPage from '../../pages/admin/FlavorsPage';
 import ExpensesPage from '../../pages/admin/ExpensesPage';
+import AccountsPage from '../../pages/admin/AccountsPage';
 import OrdersPage from '../../pages/admin/OrdersPage';
 import Profile from '../../pages/admin/Profile';
 
@@ -10,6 +11,7 @@ const ADMIN_PAGES = [
   { path: '/admin/dashboard', Component: AdminDashboard },
   { path: '/admin/flavors', Component: FlavorsPage },
   { path: '/admin/inventory', Component: ExpensesPage },
+  { path: '/admin/accounts', Component: AccountsPage },
   { path: '/admin/orders', Component: OrdersPage },
   { path: '/admin/profile', Component: Profile },
 ] as const;
