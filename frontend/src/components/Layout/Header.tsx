@@ -16,11 +16,11 @@ export default function Header() {
 
   const navItems = [
     {
-      label: 'HOME',
+      label: 'SUMMARY',
       path: '/admin/dashboard',
     },
     {
-      label: 'FLAVORS',
+      label: 'FLAVORS STOCK',
       path: '/admin/flavors',
     },
     {
@@ -28,9 +28,13 @@ export default function Header() {
       path: '/admin/inventory',
     },
     {
+      label: 'ACCOUNTS',
+      path: '/admin/accounts',
+    },
+    {
       label: 'ORDERS',
       path: '/admin/orders',
-    }
+    },
   ];
 
   return (
