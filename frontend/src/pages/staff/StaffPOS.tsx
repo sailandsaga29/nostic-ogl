@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import logo from '../../assets/logo.png';
+import StaffHeader from '../../components/Layout/StaffHeader';
 import api from '../../services/api';
 import axios from 'axios';
 import ActionFeedback from '../../components/ActionFeedback';
@@ -43,9 +42,7 @@ type CartItem = {
 };
 
 export default function StaffPOS() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const { user } = useAuth();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -540,59 +537,7 @@ export default function StaffPOS() {
 
   return (
     <div className="min-h-screen bg-[#f6f7f9]">
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-gray-200 bg-white px-8 py-4">
-        <div className="flex items-center gap-10">
-          <img
-            src={logo}
-            alt="logo"
-            className="h-10 object-contain"
-          />
-
-          <nav className="hidden items-center gap-8 text-sm font-semibold tracking-wide lg:flex">
-            <button
-              onClick={() =>
-                navigate('/staff/pos')
-              }
-              className={`pb-1 border-b-2 ${location.pathname === '/staff/pos'
-                ? 'text-[#33c3b3] border-[#33c3b3]'
-                : 'text-gray-500 border-transparent hover:text-[#33c3b3]'
-                }`}
-            >
-              PRODUCTS
-            </button>
-            <button
-              onClick={() =>
-                navigate('/staff/orders')
-              }
-              className={`pb-1 border-b-2 ${location.pathname === '/staff/orders'
-                ? 'text-[#33c3b3] border-[#33c3b3]'
-                : 'text-gray-500 border-transparent hover:text-[#33c3b3]'
-                }`}
-            >
-              ORDERS
-            </button>
-          </nav>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="hidden text-right md:block">
-            <p className="text-sm font-semibold text-gray-800">
-              {user?.name}
-            </p>
-
-            <p className="text-xs text-gray-500">
-              {user?.branchCode}
-            </p>
-          </div>
-
-          <button
-            onClick={logout}
-            className="rounded-full bg-[#33c3b3] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#2bb1a2]"
-          >
-            End Shift
-          </button>
-        </div>
-      </header>
+      <StaffHeader />
 
       <main className="p-4 lg:p-5">
         <StaffPromoCarousel

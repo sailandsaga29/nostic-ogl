@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import logo from '../../assets/logo.png';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import axios from 'axios';
 import api from '../../services/api';
 import ActionFeedback from '../../components/ActionFeedback';
 import TableRefreshButton from '../../components/TableRefreshButton';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
+import StaffHeader from '../../components/Layout/StaffHeader';
 
 type StaffOrder = {
   id: number;
@@ -85,9 +85,8 @@ export default function StaffOrderOptions({
   variant = 'staff',
 }: StaffOrderOptionsProps) {
   const isAdminView = variant === 'admin';
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [orders, setOrders] = useState<StaffOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [historyRange, setHistoryRange] = useState<HistoryRange>('DAY');
@@ -435,56 +434,7 @@ export default function StaffOrderOptions({
         isAdminView ? undefined : 'min-h-screen bg-[#eef1f4]'
       }
     >
-      {!isAdminView && (
-      <header className="sticky top-0 z-50 border-b border-gray-200 bg-white px-4 py-3 sm:px-6">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-6 lg:gap-10">
-            <img src={logo} alt="logo" className="h-9 shrink-0 object-contain" />
-            <nav className="hidden items-center gap-6 text-sm font-semibold tracking-wide md:flex">
-              <button
-                onClick={() => navigate('/staff/pos')}
-                className={`pb-0.5 border-b-2 ${
-                  location.pathname === '/staff/pos'
-                    ? 'text-[#33c3b3] border-[#33c3b3]'
-                    : 'text-gray-500 border-transparent hover:text-[#33c3b3]'
-                }`}
-              >
-                PRODUCTS
-              </button>
-              <button
-                onClick={() => navigate('/staff/orders')}
-                className={`pb-0.5 border-b-2 ${
-                  location.pathname === '/staff/orders'
-                    ? 'text-[#33c3b3] border-[#33c3b3]'
-                    : 'text-gray-500 border-transparent hover:text-[#33c3b3]'
-                }`}
-              >
-                ORDERS
-              </button>
-            </nav>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={() => navigate('/staff/pos')}
-              className="hidden rounded-full bg-[#33c3b3] px-4 py-2 text-xs font-bold text-white hover:bg-[#2bb1a2] sm:inline-flex"
-            >
-              + New Order
-            </button>
-            <div className="hidden text-right md:block">
-              <p className="text-sm font-semibold text-gray-800">{user?.name}</p>
-              <p className="text-[11px] text-gray-500">{user?.branchCode}</p>
-            </div>
-            <button
-              onClick={logout}
-              className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 sm:px-4 sm:py-2 sm:text-sm"
-            >
-              End Shift
-            </button>
-          </div>
-        </div>
-      </header>
-      )}
+      {!isAdminView && <StaffHeader />}
 
       <main className="mx-auto max-w-[1600px] p-3 sm:p-4 lg:p-5">
         {/* Toolbar */}
