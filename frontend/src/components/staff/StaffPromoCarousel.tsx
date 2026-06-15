@@ -131,7 +131,7 @@ export default function StaffPromoCarousel({
     <section className="mb-5 sm:mb-6">
       <div className="relative overflow-hidden rounded-3xl border border-stone-200/70 bg-white shadow-[0_8px_30px_rgba(28,25,23,0.06)]">
         <div
-          className={`bg-gradient-to-r ${kindAccent[slide.kind]} px-6 py-8 sm:px-10 sm:py-10 text-white transition-all duration-500`}
+          className={`bg-gradient-to-r ${kindAccent[slide.kind]} px-6 py-8 sm:px-10 sm:py-10 text-white transition-all duration-500 min-h-[260px] sm:min-h-[280px]`}
         >
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 flex-1">
@@ -172,15 +172,19 @@ export default function StaffPromoCarousel({
               ) : null}
             </div>
 
-            {slide.image ? (
-              <div className="shrink-0 mx-auto sm:mx-0 w-36 h-36 sm:w-44 sm:h-44 rounded-3xl bg-white/15 flex items-center justify-center p-4">
+            <div className="shrink-0 mx-auto sm:mx-0 w-36 h-36 sm:w-44 sm:h-44 rounded-3xl bg-white/15 flex items-center justify-center p-4">
+              {slide.image ? (
                 <img
                   src={slide.image}
                   alt={slide.title}
                   className="max-h-full max-w-full object-contain drop-shadow-lg"
                 />
-              </div>
-            ) : null}
+              ) : (
+                <span className="text-4xl sm:text-5xl" aria-hidden="true">
+                  {slide.kind === 'offer' ? '🎉' : '✨'}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

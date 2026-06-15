@@ -151,16 +151,68 @@ export default function StaffPOS() {
   const [productFeedbackId, setProductFeedbackId] = useState<number | null>(
     null,
   );
+  const [selectedProductForQty, setSelectedProductForQty] = useState<number | null>(null);
 
   useEffect(() => {
     if (!productFeedback) setProductFeedbackId(null);
   }, [productFeedback]);
+
+  useEffect(() => {
+    if (selectedProductForQty !== null) {
+      const itemInCart = cart.find((item) => item.flavorId === selectedProductForQty);
+      if (!itemInCart) {
+        setSelectedProductForQty(null);
+      }
+    }
+  }, [cart, selectedProductForQty]);
 
   /*
   =========================================
   ADD TO CART
   =========================================
   */
+
+  const startQuantitySelection = (product: Product) => {
+    if (!product.isActive) {
+      setProductFeedbackId(product.id);
+      setProductFeedback({
+        type: 'error',
+        message: 'This flavor is currently disabled',
+      });
+      return;
+    }
+    if (product.stock <= 0) {
+      setProductFeedbackId(product.id);
+      setProductFeedback({
+        type: 'error',
+        message: 'This flavor is out of stock',
+      });
+      return;
+    }
+    setSelectedProductForQty(product.id);
+    addToCart(product);
+  };
+
+  const incrementCartItem = (product: Product) => {
+    addToCart(product);
+  };
+
+  const decrementCartItem = (flavorId: number) => {
+    decreaseQty(flavorId);
+    const updatedCart = cart.filter((item) => item.quantity > 0);
+    if (!updatedCart.find((item) => item.flavorId === flavorId)) {
+      setSelectedProductForQty(null);
+    }
+  };
+
+  const closeQuantitySelector = () => {
+    setSelectedProductForQty(null);
+  };
+
+  const getProductQuantityInCart = (productId: number): number => {
+    const item = cart.find((item) => item.flavorId === productId);
+    return item ? item.quantity : 0;
+  };
 
   const addToCart = (product: Product) => {
     if (!product.isActive) {
@@ -615,14 +667,36 @@ export default function StaffPOS() {
                         <p className="text-sm font-bold text-[#33c3b3]">
                           ₹{product.price}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => addToCart(product)}
-                          disabled={!canAddProduct(product)}
-                          className="rounded-lg bg-[#33c3b3] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#2bb1a2] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {addButtonLabel(product)}
-                        </button>
+                        {selectedProductForQty === product.id ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => decrementCartItem(product.id)}
+                              className="rounded-lg bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-300"
+                            >
+                              −
+                            </button>
+                            <span className="w-6 text-center text-xs font-semibold">
+                              {getProductQuantityInCart(product.id)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => incrementCartItem(product)}
+                              className="rounded-lg bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-300"
+                            >
+                              +
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startQuantitySelection(product)}
+                            disabled={!canAddProduct(product)}
+                            className="rounded-lg bg-[#33c3b3] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#2bb1a2] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {addButtonLabel(product)}
+                          </button>
+                        )}
                       </div>
                       <ActionFeedback
                         feedback={
