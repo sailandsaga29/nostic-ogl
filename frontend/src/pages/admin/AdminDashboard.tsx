@@ -493,7 +493,7 @@ export default function AdminDashboard() {
                       : 'text-red-600'
                   }`}
                 >
-                  {formatPctLabel(insights.todayChangePct)}
+                  {/* {formatPctLabel(insights.todayChangePct)} */}
                 </p>
               </div>
 
@@ -509,7 +509,6 @@ export default function AdminDashboard() {
                       : 'text-red-600'
                   }`}
                 >
-                  {formatPctLabel(insights.monthGrossMarginPct)}
                 </p>
               </div>
 
@@ -532,7 +531,7 @@ export default function AdminDashboard() {
                       : 'text-red-600'
                   }`}
                 >
-                  {formatPctLabel(insights.monthNetMarginPct)}
+                  {/* {formatPctLabel(insights.monthNetMarginPct)} */}
                 </p>
               </div>
             </div>
