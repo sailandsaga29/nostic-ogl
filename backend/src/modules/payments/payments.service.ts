@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import { Payment, PaymentStatus } from './entities/payment.entity';
 import { PhonePeService } from './phonepe.service';
 import { OrdersService } from '../orders/orders.service';
+import { PartyOrdersService } from '../party-orders/party-orders.service';
 import { OrderStatus } from '../orders/entities/order.entity';
 
 const SUCCESS_CODES = new Set(['PAYMENT_SUCCESS', 'SUCCESS']);
@@ -29,6 +30,8 @@ export class PaymentsService {
     private readonly phonePeService: PhonePeService,
     @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
+    @Inject(forwardRef(() => PartyOrdersService))
+    private readonly partyOrdersService: PartyOrdersService,
   ) {}
 
   async initPhonePeQr(orderId: number | string) {
@@ -82,6 +85,63 @@ export class PaymentsService {
     return this.toInitResponse(payment, qr.mockMode);
   }
 
+  async initPhonePeQrForPartyOrder(partyOrderId: number | string) {
+    const partyOrder = await this.partyOrdersService.findOne(partyOrderId);
+    const parsedPartyOrderId = partyOrder.id;
+
+    if (partyOrder.status !== OrderStatus.PENDING) {
+      throw new BadRequestException('Party order is not awaiting payment');
+    }
+
+    const existingPending = await this.paymentsRepo.findOne({
+      where: {
+        partyOrderId: parsedPartyOrderId,
+        status: PaymentStatus.PENDING,
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (
+      existingPending?.qrString &&
+      existingPending.expiresAt &&
+      existingPending.expiresAt.getTime() > Date.now()
+    ) {
+      return this.toInitResponse(existingPending, this.phonePeService.isMockMode());
+    }
+
+    const amountPaise = Math.round(
+      Number(partyOrder.amountAfterDiscount) * 100,
+    );
+    if (amountPaise < 100) {
+      throw new BadRequestException('Order amount must be at least ₹1');
+    }
+
+    const merchantTransactionId = this.phonePeService.buildTransactionId(
+      `P${parsedPartyOrderId}`,
+    );
+    const qr = await this.phonePeService.createDynamicQr({
+      transactionId: merchantTransactionId,
+      amountPaise,
+      merchantOrderId: `P${parsedPartyOrderId}`,
+      message: partyOrder.note || `Bulk order ${parsedPartyOrderId}`,
+    });
+
+    const expiresAt = new Date(Date.now() + qr.expiresIn * 1000);
+    const payment = await this.paymentsRepo.save(
+      this.paymentsRepo.create({
+        partyOrderId: parsedPartyOrderId,
+        partyOrder,
+        merchantTransactionId,
+        amountPaise,
+        status: PaymentStatus.PENDING,
+        qrString: qr.qrString,
+        expiresAt,
+      }),
+    );
+
+    return this.toInitResponse(payment, qr.mockMode);
+  }
+
   async simulateMockPayment(
     merchantTransactionId: string,
     outcome: 'success' | 'failed',
@@ -90,14 +150,7 @@ export class PaymentsService {
       throw new BadRequestException('Mock payments are disabled');
     }
 
-    const payment = await this.paymentsRepo.findOne({
-      where: { merchantTransactionId },
-      relations: { order: true },
-    });
-
-    if (!payment) {
-      throw new NotFoundException('Payment not found');
-    }
+    const payment = await this.findPaymentByTransactionId(merchantTransactionId);
 
     const remote = this.phonePeService.simulateMockPayment(
       merchantTransactionId,
@@ -112,14 +165,7 @@ export class PaymentsService {
   }
 
   async getPhonePeStatus(merchantTransactionId: string) {
-    const payment = await this.paymentsRepo.findOne({
-      where: { merchantTransactionId },
-      relations: { order: true },
-    });
-
-    if (!payment) {
-      throw new NotFoundException('Payment not found');
-    }
+    const payment = await this.findPaymentByTransactionId(merchantTransactionId);
 
     if (payment.status === PaymentStatus.SUCCESS) {
       return this.toStatusResponse(payment, 'SUCCESS');
@@ -135,7 +181,7 @@ export class PaymentsService {
     if (payment.expiresAt && payment.expiresAt.getTime() <= Date.now()) {
       payment.status = PaymentStatus.EXPIRED;
       await this.paymentsRepo.save(payment);
-      await this.ordersService.markPaymentFailed(payment.orderId);
+      await this.markLinkedOrderFailed(payment);
       return this.toStatusResponse(payment, 'EXPIRED');
     }
 
@@ -162,14 +208,7 @@ export class PaymentsService {
       throw new BadRequestException('Missing transaction id in callback');
     }
 
-    const payment = await this.paymentsRepo.findOne({
-      where: { merchantTransactionId: transactionId },
-      relations: { order: true },
-    });
-
-    if (!payment) {
-      throw new NotFoundException('Payment not found for callback');
-    }
+    const payment = await this.findPaymentByTransactionId(transactionId);
 
     await this.applyPhonePeResult(
       payment,
@@ -179,6 +218,39 @@ export class PaymentsService {
     );
 
     return { received: true };
+  }
+
+  private async findPaymentByTransactionId(merchantTransactionId: string) {
+    const payment = await this.paymentsRepo.findOne({
+      where: { merchantTransactionId },
+      relations: { order: true, partyOrder: true },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    return payment;
+  }
+
+  private async markLinkedOrderFailed(payment: Payment) {
+    if (payment.partyOrderId) {
+      await this.partyOrdersService.markPaymentFailed(payment.partyOrderId);
+      return;
+    }
+    if (payment.orderId) {
+      await this.ordersService.markPaymentFailed(payment.orderId);
+    }
+  }
+
+  private async fulfillLinkedOrder(payment: Payment) {
+    if (payment.partyOrderId) {
+      await this.partyOrdersService.fulfillPartyOrder(payment.partyOrderId);
+      return;
+    }
+    if (payment.orderId) {
+      await this.ordersService.fulfillOrder(payment.orderId);
+    }
   }
 
   private async applyPhonePeResult(
@@ -197,7 +269,7 @@ export class PaymentsService {
     if (code && SUCCESS_CODES.has(code)) {
       payment.status = PaymentStatus.SUCCESS;
       await this.paymentsRepo.save(payment);
-      await this.ordersService.fulfillOrder(payment.orderId);
+      await this.fulfillLinkedOrder(payment);
       return this.toStatusResponse(payment, 'SUCCESS');
     }
 
@@ -207,7 +279,7 @@ export class PaymentsService {
           ? PaymentStatus.EXPIRED
           : PaymentStatus.FAILED;
       await this.paymentsRepo.save(payment);
-      await this.ordersService.markPaymentFailed(payment.orderId);
+      await this.markLinkedOrderFailed(payment);
       return this.toStatusResponse(
         payment,
         payment.status === PaymentStatus.EXPIRED ? 'EXPIRED' : 'FAILED',
@@ -227,6 +299,7 @@ export class PaymentsService {
     return {
       paymentId: payment.id,
       orderId: payment.orderId,
+      partyOrderId: payment.partyOrderId,
       merchantTransactionId: payment.merchantTransactionId,
       qrString: payment.qrString,
       amount: Number(payment.amountPaise) / 100,
@@ -238,15 +311,19 @@ export class PaymentsService {
   }
 
   private toStatusResponse(payment: Payment, status: string) {
+    const linkedStatus =
+      payment.partyOrder?.status ?? payment.order?.status ?? undefined;
+
     return {
       paymentId: payment.id,
       orderId: payment.orderId,
+      partyOrderId: payment.partyOrderId,
       merchantTransactionId: payment.merchantTransactionId,
       status,
       amount: Number(payment.amountPaise) / 100,
       phonepeCode: payment.phonepeCode,
       message: payment.phonepeMessage,
-      orderStatus: payment.order?.status,
+      orderStatus: linkedStatus,
     };
   }
 }

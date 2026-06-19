@@ -37,7 +37,34 @@ type PartyOrderApi = {
   paymentMethod?: 'CASH' | 'ONLINE';
   note?: string;
   createdAt: string;
+  status?: string;
+  lineItems?: Array<{
+    flavorId: number;
+    quantity: number;
+    flavorName: string;
+    unitPrice: number;
+  }>;
 };
+
+const IST_TIME: Intl.DateTimeFormatOptions = {
+  timeZone: 'Asia/Kolkata',
+  hour: '2-digit',
+  minute: '2-digit',
+  day: '2-digit',
+  month: 'short',
+};
+
+const parseOrderDate = (createdAt: string) => {
+  const raw = createdAt?.trim();
+  if (!raw) return new Date(NaN);
+  if (!raw.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(raw)) {
+    return new Date(`${raw}Z`);
+  }
+  return new Date(raw);
+};
+
+const formatOrderId = (order: StaffOrder) =>
+  order.orderType === 'PARTY' ? `BLK-${order.id}` : `#${order.id}`;
 
 type HistoryRange = 'DAY' | 'MONTH' | 'YEAR';
 type PaymentFilter = 'ALL' | 'CASH' | 'ONLINE';
@@ -63,13 +90,15 @@ const displayStatus = (order: StaffOrder) => {
 };
 
 const formatRelativeTime = (createdAt: string) => {
-  const diffMs = Date.now() - new Date(createdAt).getTime();
+  const date = parseOrderDate(createdAt);
+  const diffMs = Date.now() - date.getTime();
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return 'Just now';
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
-  return new Date(createdAt).toLocaleDateString('en-IN', {
+  return date.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: 'short',
   });
@@ -114,10 +143,12 @@ export default function StaffOrderOptions({
         ? ordersRes.data.map((o: StaffOrder) => ({ ...o, orderType: 'RETAIL' as const }))
         : [];
       const party: StaffOrder[] = Array.isArray(partyRes.data)
-        ? partyRes.data.map((p: PartyOrderApi) => ({
+        ? partyRes.data.map((p: PartyOrderApi) => {
+            const lineItems = Array.isArray(p.lineItems) ? p.lineItems : [];
+            return {
             id: p.id,
             orderType: 'PARTY' as const,
-            status: 'COMPLETED',
+            status: p.status ?? 'COMPLETED',
             paymentMethod: p.paymentMethod ?? 'CASH',
             total: Number(p.amountAfterDiscount ?? 0),
             totalAmount: Number(p.totalAmount ?? 0),
@@ -128,18 +159,27 @@ export default function StaffOrderOptions({
               p.note?.trim() ||
               `${p.discountPercent}% discount · earnings ${formatCurrency(Number(p.totalEarnings ?? 0))}`,
             createdAt: p.createdAt,
-            items: [
-              {
-                quantity: 1,
-                flavor: { name: `Party: ${p.partyName}` },
-              },
-            ],
-          }))
+            items:
+              lineItems.length > 0
+                ? lineItems.map((item) => ({
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    flavor: { name: item.flavorName },
+                  }))
+                : [
+                    {
+                      quantity: 1,
+                      flavor: { name: `Party: ${p.partyName}` },
+                    },
+                  ],
+          };
+          })
         : [];
       setOrders(
         [...retail, ...party].sort(
           (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+            parseOrderDate(b.createdAt).getTime() -
+            parseOrderDate(a.createdAt).getTime(),
         ),
       );
     } catch (error) {
@@ -158,7 +198,7 @@ export default function StaffOrderOptions({
     const now = new Date();
     return orders.filter((order) => {
       if (!order?.createdAt) return false;
-      const date = new Date(order.createdAt);
+      const date = parseOrderDate(order.createdAt);
       if (Number.isNaN(date.getTime())) return false;
       if (historyRange === 'DAY') {
         return date.toDateString() === now.toDateString();
@@ -189,6 +229,7 @@ export default function StaffOrderOptions({
           .join(' ')
           .toLowerCase();
         return (
+          formatOrderId(order).toLowerCase().includes(query) ||
           String(order.id).toLowerCase().includes(query) ||
           itemsText.includes(query) ||
           (order.note ?? '').toLowerCase().includes(query) ||
@@ -197,7 +238,8 @@ export default function StaffOrderOptions({
       })
       .sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          parseOrderDate(b.createdAt).getTime() -
+          parseOrderDate(a.createdAt).getTime(),
       );
   }, [rangeOrders, paymentFilter, statusFilter, search]);
 
@@ -279,7 +321,14 @@ export default function StaffOrderOptions({
     }));
 
     for (const order of completed) {
-      const hour = new Date(order.createdAt).getHours();
+      const hour = Number(
+        parseOrderDate(order.createdAt).toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          hour12: false,
+        }),
+      );
+      if (Number.isNaN(hour) || hour < 0 || hour > 23) continue;
       hourlyBuckets[hour].count += 1;
       hourlyBuckets[hour].revenue += Number(order.total ?? 0);
     }
@@ -320,24 +369,78 @@ export default function StaffOrderOptions({
         : 'This year';
 
   const formatOrderTime = (createdAt: string) =>
-    new Date(createdAt).toLocaleString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      day: '2-digit',
-      month: 'short',
-    });
+    parseOrderDate(createdAt).toLocaleString('en-IN', IST_TIME);
 
-  const formatItemsCompact = (order: StaffOrder) => {
-    if (order.orderType === 'PARTY' && order.partyName) {
-      return `Party · ${order.partyName}`;
-    }
+  const hasPartyLineItems = (order: StaffOrder) => {
     const items = order.items ?? [];
-    if (items.length === 0) return '—';
-    const first = items[0];
-    const firstLabel = `${first.quantity}× ${first.flavor?.name ?? 'Item'}`;
-    if (items.length === 1) return firstLabel;
-    const rest = items.length - 1;
-    return `${firstLabel} +${rest}`;
+    return (
+      items.length > 0 && !items[0].flavor?.name?.startsWith('Party:')
+    );
+  };
+
+  const formatItemsTitle = (order: StaffOrder) => {
+    const items = order.items ?? [];
+    if (order.orderType === 'PARTY' && order.partyName) {
+      const itemLines = items
+        .map((item) => `${item.quantity}× ${item.flavor?.name ?? 'Item'}`)
+        .join(', ');
+      return itemLines
+        ? `Party · ${order.partyName} — ${itemLines}`
+        : `Party · ${order.partyName}`;
+    }
+    return items
+      .map((item) => `${item.quantity}× ${item.flavor?.name ?? 'Item'}`)
+      .join(', ');
+  };
+
+  const renderOrderItems = (order: StaffOrder) => {
+    const items = order.items ?? [];
+
+    if (order.orderType === 'PARTY' && order.partyName) {
+      return (
+        <div className="min-w-[160px] max-w-sm whitespace-normal">
+          <p className="font-medium text-gray-800">Party · {order.partyName}</p>
+          {hasPartyLineItems(order) && (
+            <ul className="mt-1 space-y-0.5">
+              {items.map((item, index) => (
+                <li
+                  key={`${order.id}-item-${index}`}
+                  className="text-xs leading-snug text-gray-600"
+                >
+                  {item.quantity}× {item.flavor?.name ?? 'Item'}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      );
+    }
+
+    if (items.length === 0) {
+      return <span className="text-gray-400">—</span>;
+    }
+
+    if (items.length === 1) {
+      const item = items[0];
+      return (
+        <p className="max-w-sm whitespace-normal font-medium text-gray-800">
+          {item.quantity}× {item.flavor?.name ?? 'Item'}
+        </p>
+      );
+    }
+
+    return (
+      <ul className="max-w-sm space-y-0.5 whitespace-normal">
+        {items.map((item, index) => (
+          <li
+            key={`${order.id}-item-${index}`}
+            className="text-sm leading-snug text-gray-800"
+          >
+            {item.quantity}× {item.flavor?.name ?? 'Item'}
+          </li>
+        ))}
+      </ul>
+    );
   };
 
   const itemCount = (order: StaffOrder) =>
@@ -731,21 +834,13 @@ export default function StaffOrderOptions({
                             {formatOrderTime(order.createdAt)}
                           </p>
                           <p className="font-mono text-[9px] text-gray-300">
-                          #{String(order.id).slice(0, 8)}
+                            {formatOrderId(order)}
                           </p>
                         </td>
                         <td className="px-3 py-2.5 sm:px-4">
-                          <p
-                            className="max-w-[200px] truncate font-medium text-gray-800 lg:max-w-xs"
-                            title={(order.items ?? [])
-                              .map(
-                                (i) =>
-                                  `${i.quantity}× ${i.flavor?.name ?? 'Item'}`,
-                              )
-                              .join(', ')}
-                          >
-                            {formatItemsCompact(order)}
-                          </p>
+                          <div title={formatItemsTitle(order)}>
+                            {renderOrderItems(order)}
+                          </div>
                           <p className="text-[10px] text-gray-400">
                             {order.orderType === 'PARTY'
                               ? `${order.discountPercent ?? 0}% off · was ${formatCurrency(Number(order.totalAmount ?? 0))}`

@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Order } from '../../orders/entities/order.entity';
+import { PartyOrder } from '../../party-orders/entities/party-order.entity';
 
 export enum PaymentStatus {
   PENDING = 'PENDING',
@@ -21,12 +22,19 @@ export class Payment {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @ManyToOne(() => Order, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Order, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'orderId' })
-  order!: Order;
+  order?: Order;
 
-  @Column()
-  orderId!: number;
+  @Column({ nullable: true })
+  orderId?: number;
+
+  @ManyToOne(() => PartyOrder, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'partyOrderId' })
+  partyOrder?: PartyOrder;
+
+  @Column({ nullable: true })
+  partyOrderId?: number;
 
   @Column({ unique: true })
   merchantTransactionId!: string;

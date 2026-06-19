@@ -10,6 +10,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { InitPhonePePaymentDto } from './dto/init-phonepe-payment.dto';
+import { InitPhonePePartyPaymentDto } from './dto/init-phonepe-party-payment.dto';
 import { SimulateMockPaymentDto } from './dto/simulate-mock-payment.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
@@ -23,6 +24,13 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   init(@Body() body: InitPhonePePaymentDto) {
     return this.paymentsService.initPhonePeQr(body.orderId);
+  }
+
+  @Post('init-party')
+  @ApiBearerAuth('Authorization')
+  @UseGuards(JwtAuthGuard)
+  initParty(@Body() body: InitPhonePePartyPaymentDto) {
+    return this.paymentsService.initPhonePeQrForPartyOrder(body.partyOrderId);
   }
 
   @Get('status/:merchantTransactionId')

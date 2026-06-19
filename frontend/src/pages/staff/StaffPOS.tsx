@@ -148,20 +148,10 @@ export default function StaffPOS() {
   const [productFeedbackId, setProductFeedbackId] = useState<number | null>(
     null,
   );
-  const [selectedProductForQty, setSelectedProductForQty] = useState<number | null>(null);
 
   useEffect(() => {
     if (!productFeedback) setProductFeedbackId(null);
   }, [productFeedback]);
-
-  useEffect(() => {
-    if (selectedProductForQty !== null) {
-      const itemInCart = cart.find((item) => item.flavorId === selectedProductForQty);
-      if (!itemInCart) {
-        setSelectedProductForQty(null);
-      }
-    }
-  }, [cart, selectedProductForQty]);
 
   /*
   =========================================
@@ -169,7 +159,7 @@ export default function StaffPOS() {
   =========================================
   */
 
-  const startQuantitySelection = (product: Product) => {
+  const handleAddProduct = (product: Product) => {
     if (!product.isActive) {
       setProductFeedbackId(product.id);
       setProductFeedback({
@@ -186,7 +176,6 @@ export default function StaffPOS() {
       });
       return;
     }
-    setSelectedProductForQty(product.id);
     addToCart(product);
   };
 
@@ -196,14 +185,6 @@ export default function StaffPOS() {
 
   const decrementCartItem = (flavorId: number) => {
     decreaseQty(flavorId);
-    const updatedCart = cart.filter((item) => item.quantity > 0);
-    if (!updatedCart.find((item) => item.flavorId === flavorId)) {
-      setSelectedProductForQty(null);
-    }
-  };
-
-  const closeQuantitySelector = () => {
-    setSelectedProductForQty(null);
   };
 
   const getProductQuantityInCart = (productId: number): number => {
@@ -379,62 +360,56 @@ export default function StaffPOS() {
         setLoading(true);
         setCheckoutFeedback(null);
 
-        await api.post('/party-orders', {
+        const partyPayload: {
+          partyName: string;
+          totalAmount: number;
+          discountPercent: number;
+          note?: string;
+          paymentMethod: typeof paymentMethod;
+          userId?: number;
+          items?: Array<{ flavorId: number; quantity: number }>;
+        } = {
           partyName: name,
           totalAmount: total,
           discountPercent: discount,
           note: orderNote.trim() || bulkNote,
           paymentMethod,
           userId: user?.id,
-        });
+        };
 
         if (cart.length > 0) {
-          const payload = {
-            userId: user?.id,
-            note: orderNote.trim()
-              ? `${orderNote.trim()} · ${bulkNote}`
-              : bulkNote,
-            paymentMethod,
-            items: cart.map((item) => ({
-              flavorId: item.flavorId,
-              quantity: item.quantity,
-            })),
-          };
+          partyPayload.items = cart.map((item) => ({
+            flavorId: item.flavorId,
+            quantity: item.quantity,
+          }));
+        }
 
-          if (paymentMethod === 'CASH') {
-            await api.post('/orders', payload);
-            setCheckoutFeedback({
-              type: 'success',
-              message: 'Bulk order completed',
-            });
-            setCart([]);
-            setOrderNote('');
-            resetBulkFields();
-            await loadProducts(false);
-            return;
-          }
+        const partyResponse = await api.post('/party-orders', partyPayload);
 
-          const orderResponse = await api.post('/orders', payload);
-          const paymentResponse = await api.post('/payments/phonepe/init', {
-            orderId: orderResponse.data.id,
+        if (paymentMethod === 'CASH') {
+          setCheckoutFeedback({
+            type: 'success',
+            message: 'Bulk order completed',
           });
-
-          setPaymentSession({
-            merchantTransactionId: paymentResponse.data.merchantTransactionId,
-            qrString: paymentResponse.data.qrString,
-            amount: Number(paymentResponse.data.amount ?? payable),
-            expiresAt: paymentResponse.data.expiresAt,
-            mockMode: Boolean(paymentResponse.data.mockMode),
-          });
+          setCart([]);
+          setOrderNote('');
+          resetBulkFields();
+          await loadProducts(false);
           return;
         }
 
-        setCheckoutFeedback({
-          type: 'success',
-          message: 'Party order saved',
+        const paymentResponse = await api.post('/payments/phonepe/init-party', {
+          partyOrderId: partyResponse.data.id,
         });
-        setOrderNote('');
-        resetBulkFields();
+
+        setPaymentSession({
+          merchantTransactionId: paymentResponse.data.merchantTransactionId,
+          qrString: paymentResponse.data.qrString,
+          amount: Number(paymentResponse.data.amount ?? payable),
+          expiresAt: paymentResponse.data.expiresAt,
+          mockMode: Boolean(paymentResponse.data.mockMode),
+        });
+        return;
       } catch (err) {
         console.error(err);
         let message = 'Failed to complete bulk order';
@@ -513,7 +488,9 @@ export default function StaffPOS() {
   const handlePaymentSuccess = async () => {
     setCheckoutFeedback({
       type: 'success',
-      message: 'Payment received. Order completed.',
+      message: isBulkOrder
+        ? 'Payment received. Bulk order completed.'
+        : 'Payment received. Order completed.',
     });
     setPaymentSession(null);
     setCart([]);
@@ -612,7 +589,7 @@ export default function StaffPOS() {
                         <p className="text-sm font-bold text-[#33c3b3]">
                           ₹{product.price}
                         </p>
-                        {selectedProductForQty === product.id ? (
+                        {getProductQuantityInCart(product.id) > 0 ? (
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
@@ -635,7 +612,7 @@ export default function StaffPOS() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => startQuantitySelection(product)}
+                            onClick={() => handleAddProduct(product)}
                             disabled={!canAddProduct(product)}
                             className="rounded-lg bg-[#33c3b3] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#2bb1a2] disabled:cursor-not-allowed disabled:opacity-50"
                           >

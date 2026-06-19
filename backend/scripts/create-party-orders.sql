@@ -15,3 +15,24 @@ CREATE TABLE IF NOT EXISTS party_orders (
 
 CREATE INDEX IF NOT EXISTS idx_party_orders_created_at ON party_orders ("createdAt" DESC);
 CREATE INDEX IF NOT EXISTS idx_party_orders_user_id ON party_orders ("userId");
+
+-- Optional: run when upgrading an existing database
+ALTER TABLE party_orders ADD COLUMN IF NOT EXISTS "lineItems" jsonb;
+
+-- Party order payment lifecycle (online QR)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'orders_status_enum') THEN
+    CREATE TYPE orders_status_enum AS ENUM (
+      'PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'REFUNDED', 'FAILED'
+    );
+  END IF;
+END $$;
+
+ALTER TABLE party_orders
+  ADD COLUMN IF NOT EXISTS status orders_status_enum NOT NULL DEFAULT 'COMPLETED';
+
+-- Payments can link to retail or party orders
+ALTER TABLE payments ALTER COLUMN "orderId" DROP NOT NULL;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS "partyOrderId" BIGINT REFERENCES party_orders(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_payments_party_order_id ON payments ("partyOrderId");

@@ -8,7 +8,14 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../../users/entities/user.entity';
-import { PaymentMethod } from '../../orders/entities/order.entity';
+import { PaymentMethod, OrderStatus } from '../../orders/entities/order.entity';
+
+export type PartyOrderLineItem = {
+  flavorId: number;
+  quantity: number;
+  flavorName: string;
+  unitPrice: number;
+};
 
 @Entity('party_orders')
 export class PartyOrder {
@@ -33,6 +40,9 @@ export class PartyOrder {
   @Column({ type: 'enum', enum: PaymentMethod, default: PaymentMethod.CASH })
   paymentMethod!: PaymentMethod;
 
+  @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.COMPLETED })
+  status!: OrderStatus;
+
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'userId' })
   user?: User;
@@ -43,9 +53,12 @@ export class PartyOrder {
   @Column({ nullable: true, type: 'text' })
   note?: string;
 
-  @CreateDateColumn()
+  @Column({ type: 'jsonb', nullable: true })
+  lineItems?: PartyOrderLineItem[];
+
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt!: Date;
 }

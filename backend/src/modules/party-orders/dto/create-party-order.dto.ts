@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -8,9 +9,12 @@ import {
   IsString,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { PaymentMethod } from '../../orders/entities/order.entity';
+import { CreateOrderItemDto } from '../../orders/dto/create-order-item.dto';
 
 export class CreatePartyOrderDto {
   @IsString()
@@ -51,4 +55,15 @@ export class CreatePartyOrderDto {
   @IsOptional()
   @IsIn(Object.values(PaymentMethod))
   paymentMethod?: PaymentMethod;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateOrderItemDto)
+  @ApiProperty({
+    type: [CreateOrderItemDto],
+    required: false,
+    description: 'Cart line items; stock is deducted when provided',
+  })
+  items?: CreateOrderItemDto[];
 }
