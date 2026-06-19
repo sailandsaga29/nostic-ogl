@@ -8,7 +8,7 @@ import StaffPromoCarousel from '../../components/staff/StaffPromoCarousel';
 import PhonePeQrModal from '../../components/payments/PhonePeQrModal';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 import { sortByName } from '../../utils/sortByName';
-import { calculatePartyOrderAmounts } from '../../utils/partyOrderCalc';
+import { calculatePartyOrderAmounts, formatRupeeAmount } from '../../utils/partyOrderCalc';
 
 const PLACEHOLDER_IMAGE =
   'https://images.unsplash.com/photo-1563805042-7684c019e1cb?q=80&w=600';
@@ -354,7 +354,7 @@ export default function StaffPOS() {
       }
 
       const payable = bulkAmounts.amountAfterDiscount;
-      const bulkNote = `Party: ${name} · ${discount}% off · payable ₹${payable.toFixed(0)}`;
+      const bulkNote = `Party: ${name} · ${discount}% off · payable ₹${formatRupeeAmount(payable)}`;
 
       try {
         setLoading(true);
@@ -694,7 +694,7 @@ export default function StaffPOS() {
                     <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
                       Payable:{' '}
                       <span className="font-bold">
-                        ₹{bulkAmounts.amountAfterDiscount.toLocaleString('en-IN')}
+                        ₹{formatRupeeAmount(bulkAmounts.amountAfterDiscount)}
                       </span>
                       {bulkAmounts.discountPercent > 0 && (
                         <span className="text-amber-700">
@@ -790,7 +790,7 @@ export default function StaffPOS() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-gray-500">Total</span>
                   <span className="text-lg font-bold text-[#33c3b3]">
-                    ₹{checkoutTotal.toFixed(0)}
+                    ₹{formatRupeeAmount(checkoutTotal)}
                   </span>
                 </div>
 

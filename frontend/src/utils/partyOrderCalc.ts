@@ -24,3 +24,10 @@ export function calculatePartyOrderAmounts(
     totalEarnings,
   };
 }
+
+export function formatRupeeAmount(value: number) {
+  return Number(value ?? 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
