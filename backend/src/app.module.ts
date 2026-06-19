@@ -22,6 +22,7 @@ import { Expense } from './modules/expenses/entities/expense.entity';
 import { RefreshToken } from './auth/entities/refresh-token.entity';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { runStartupMigrations } from './config/runStartupMigrations';
 
 const entities = [
   User,
@@ -49,34 +50,47 @@ const entities = [
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => {
+      useFactory: async (configService: ConfigService) => {
         const synchronize =
           configService.get<string>('DB_SYNCHRONIZE', 'false') === 'true';
         const databaseUrl = configService.get<string>('DATABASE_URL');
 
-        if (databaseUrl) {
+        const buildConfig = () => {
+          if (databaseUrl) {
+            return {
+              type: 'postgres' as const,
+              url: databaseUrl,
+              ssl:
+                configService.get<string>('DB_SSL', 'true') === 'true'
+                  ? { rejectUnauthorized: false }
+                  : false,
+              entities,
+              synchronize,
+            };
+          }
+
           return {
             type: 'postgres' as const,
-            url: databaseUrl,
-            ssl:
-              configService.get<string>('DB_SSL', 'true') === 'true'
-                ? { rejectUnauthorized: false }
-                : false,
+            host: configService.get<string>('DB_HOST'),
+            port: Number(configService.get('DB_PORT') ?? 5432),
+            username: configService.get<string>('DB_USERNAME'),
+            password: configService.get<string>('DB_PASSWORD'),
+            database: configService.get<string>('DB_NAME'),
             entities,
             synchronize,
           };
+        };
+
+        const config = buildConfig();
+
+        try {
+          await runStartupMigrations(config);
+        } catch (error) {
+          console.error('Startup migration failed:', error);
+          throw error;
         }
 
-        return {
-          type: 'postgres' as const,
-          host: configService.get<string>('DB_HOST'),
-          port: Number(configService.get('DB_PORT') ?? 5432),
-          username: configService.get<string>('DB_USERNAME'),
-          password: configService.get<string>('DB_PASSWORD'),
-          database: configService.get<string>('DB_NAME'),
-          entities,
-          synchronize,
-        };
+        return config;
       },
     }),
     AuthModule,
