@@ -82,6 +82,27 @@ export class FlavorsController {
     return this.flavorsService.getMonthsByYear(Number(year));
   }
 
+  @Get('procurement/total')
+  getProcurementTotal() {
+    return this.flavorsService.getProcurementTotalAllTime();
+  }
+
+  @Get('procurement/:year/:month')
+  getProcurementForMonth(
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.flavorsService.getProcurementTotalForPeriod(
+      Number(year),
+      Number(month),
+    );
+  }
+
+  @Get('procurement/:year')
+  getProcurementForYear(@Param('year') year: string) {
+    return this.flavorsService.getProcurementTotalForPeriod(Number(year));
+  }
+
   @Get('monthly/:year/:month')
   getMonthlyByYearMonth(@Param('year') year: string, @Param('month') month: string) {
     return this.flavorsService.getMonthlyStats(Number(year), Number(month));

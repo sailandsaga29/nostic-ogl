@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TableRefreshButton from '../../components/TableRefreshButton';
-import api from '../../services/api';
+import { cachedGet } from '../../services/apiCache';
+import type { AdminPageProps } from '../../types/adminPage';
 
 const MONTH_NAMES = [
   'January',
@@ -103,7 +104,8 @@ const sumPartyEarnings = (list: PartyOrder[]) =>
 const sumProcurement = (rows: MonthlyFlavorRow[]) =>
   rows.reduce((sum, row) => sum + Number(row.revenue ?? 0), 0);
 
-export default function AccountsPage() {
+export default function AccountsPage({ isActive = true }: AdminPageProps) {
+  const hasLoadedRef = useRef(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [partyOrders, setPartyOrders] = useState<PartyOrder[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -131,36 +133,36 @@ export default function AccountsPage() {
       if (isFutureMonth(year, monthNum)) {
         return [] as MonthlyFlavorRow[];
       }
-      const response = await api.get(`/flavors/monthly/${year}/${monthNum}`);
-      return Array.isArray(response.data)
-        ? (response.data as MonthlyFlavorRow[])
-        : [];
+      const response = await cachedGet<{ total: number; units: number }>(
+        `/flavors/procurement/${year}/${monthNum}`,
+        { ttl: 120_000 },
+      );
+      return [
+        {
+          revenue: Number(response.total ?? 0),
+          quantity: Number(response.units ?? 0),
+        },
+      ];
     },
     [],
   );
 
-  const loadProcurementForYear = useCallback(
-    async (year: number) => {
-      try {
-        const monthsRes = await api.get(`/flavors/meta/months/${year}`);
-        const months: number[] = Array.isArray(monthsRes.data)
-          ? monthsRes.data.map((m: number | string) => Number(m))
-          : [];
-
-        if (months.length === 0) {
-          return [] as MonthlyFlavorRow[];
-        }
-
-        const monthlyResults = await Promise.all(
-          months.map((monthNum) => loadProcurementForMonth(year, monthNum)),
-        );
-        return monthlyResults.flat();
-      } catch {
-        return [] as MonthlyFlavorRow[];
-      }
-    },
-    [loadProcurementForMonth],
-  );
+  const loadProcurementForYear = useCallback(async (year: number) => {
+    try {
+      const response = await cachedGet<{ total: number; units: number }>(
+        `/flavors/procurement/${year}`,
+        { ttl: 120_000 },
+      );
+      return [
+        {
+          revenue: Number(response.total ?? 0),
+          quantity: Number(response.units ?? 0),
+        },
+      ];
+    } catch {
+      return [] as MonthlyFlavorRow[];
+    }
+  }, []);
 
   const loadAccountsData = useCallback(
     async (options?: { refresh?: boolean }) => {
@@ -173,18 +175,21 @@ export default function AccountsPage() {
         }
 
         const [ordersRes, partyRes, expensesRes, yearsRes] = await Promise.all([
-          api.get('/orders'),
-          api.get('/party-orders'),
-          api.get('/expenses'),
-          api.get('/flavors/meta/years'),
+          cachedGet<Order[]>('/orders', { force: isRefresh }),
+          cachedGet<PartyOrder[]>('/party-orders', { force: isRefresh }),
+          cachedGet<Expense[]>('/expenses', { force: isRefresh }),
+          cachedGet<number[]>('/flavors/meta/years', {
+            ttl: 300_000,
+            force: isRefresh,
+          }),
         ]);
 
-        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
-        setPartyOrders(Array.isArray(partyRes.data) ? partyRes.data : []);
-        setExpenses(Array.isArray(expensesRes.data) ? expensesRes.data : []);
+        setOrders(Array.isArray(ordersRes) ? ordersRes : []);
+        setPartyOrders(Array.isArray(partyRes) ? partyRes : []);
+        setExpenses(Array.isArray(expensesRes) ? expensesRes : []);
 
-        const years: number[] = Array.isArray(yearsRes.data)
-          ? yearsRes.data.map((y: number | string) => Number(y))
+        const years: number[] = Array.isArray(yearsRes)
+          ? yearsRes.map((y: number | string) => Number(y))
           : [];
         const yearList =
           years.length > 0 ? years : [new Date().getFullYear()];
@@ -205,10 +210,20 @@ export default function AccountsPage() {
   );
 
   useEffect(() => {
-    void loadAccountsData();
-  }, [loadAccountsData]);
+    if (!isActive || hasLoadedRef.current) {
+      return;
+    }
+
+    void loadAccountsData().then(() => {
+      hasLoadedRef.current = true;
+    });
+  }, [isActive, loadAccountsData]);
 
   useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
     let mounted = true;
 
     const loadProcurement = async () => {

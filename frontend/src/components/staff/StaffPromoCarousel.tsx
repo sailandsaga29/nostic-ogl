@@ -100,7 +100,7 @@ type StaffPromoCarouselProps = {
 
 export default function StaffPromoCarousel({
   products,
-  onAddToCart,
+  
 }: StaffPromoCarouselProps) {
   const slides = useMemo(() => buildSlides(products), [products]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -152,32 +152,15 @@ export default function StaffPromoCarousel({
                   {slide.priceLabel}
                 </p>
               ) : null}
-              {slide.kind === 'flavor' &&
-                slide.product &&
-                onAddToCart ? (
-                <button
-                  type="button"
-                  onClick={() => onAddToCart(slide.product!)}
-                  disabled={
-                    !slide.product.isActive || slide.product.stock <= 0
-                  }
-                  className="mt-5 rounded-full bg-white text-[#33c3b3] px-5 py-2 text-sm font-semibold hover:bg-white/90 transition disabled:opacity-50"
-                >
-                  {!slide.product.isActive
-                    ? 'Unavailable'
-                    : slide.product.stock <= 0
-                      ? 'Out of stock'
-                      : 'Add to cart'}
-                </button>
-              ) : null}
+         
             </div>
 
-            <div className="shrink-0 mx-auto sm:mx-0 w-36 h-36 sm:w-44 sm:h-44 rounded-3xl bg-white/15 flex items-center justify-center p-4">
+            <div className="mx-auto flex aspect-square h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-3xl bg-white/15 sm:mx-0 sm:h-44 sm:w-44">
               {slide.image ? (
                 <img
                   src={slide.image}
                   alt={slide.title}
-                  className="max-h-full max-w-full object-contain drop-shadow-lg"
+                  className="h-full w-full object-cover object-center drop-shadow-lg"
                 />
               ) : (
                 <span className="text-4xl sm:text-5xl" aria-hidden="true">

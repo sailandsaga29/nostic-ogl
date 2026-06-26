@@ -208,11 +208,23 @@ export class PartyOrdersService {
     return this.partyOrdersRepo.save(order);
   }
 
-  async findAll() {
-    return this.partyOrdersRepo.find({
-      order: { createdAt: 'DESC' },
-      relations: { user: true },
-    });
+  async findAll(filters: { from?: string; to?: string } = {}) {
+    const qb = this.partyOrdersRepo
+      .createQueryBuilder('partyOrder')
+      .orderBy('partyOrder.createdAt', 'DESC');
+
+    if (filters.from) {
+      qb.andWhere('partyOrder.createdAt >= :from', {
+        from: new Date(filters.from),
+      });
+    }
+    if (filters.to) {
+      qb.andWhere('partyOrder.createdAt <= :to', {
+        to: new Date(filters.to),
+      });
+    }
+
+    return qb.getMany();
   }
 
   async findOne(id: number | string) {

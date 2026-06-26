@@ -9,9 +9,7 @@ import PhonePeQrModal from '../../components/payments/PhonePeQrModal';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 import { sortByName } from '../../utils/sortByName';
 import { calculatePartyOrderAmounts, formatRupeeAmount } from '../../utils/partyOrderCalc';
-
-const PLACEHOLDER_IMAGE =
-  'https://images.unsplash.com/photo-1563805042-7684c019e1cb?q=80&w=600';
+import { resolveStaffProductImage } from '../../utils/popsicleImages';
 
 type Product = {
   id: number;
@@ -99,7 +97,11 @@ export default function StaffPOS() {
             type: flavor.description?.trim() || 'Ice Cream',
             price: Number(flavor.price ?? 0),
             stock: Number(flavor.stock ?? 0),
-            image: flavor.image?.trim() || PLACEHOLDER_IMAGE,
+            image: resolveStaffProductImage(
+              flavor.name,
+              flavor.category,
+              flavor.image,
+            ),
             isActive: flavor.isActive !== false,
             updatedAt: flavor.updatedAt,
           })),
@@ -569,12 +571,17 @@ export default function StaffPOS() {
                   key={product.id}
                   className="flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
                 >
-                  <div className="flex h-28 items-center justify-center bg-[#f6ede3] p-2 sm:h-32">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="max-h-full object-contain"
-                    />
+                  <div className="relative aspect-[4/3] w-full shrink-0 overflow-hidden bg-white">
+                    {product.image ? (
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="h-full w-full scale-110 object-cover object-center"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="h-full w-full bg-[#f6ede3]" aria-hidden="true" />
+                    )}
                   </div>
 
                   <div className="flex flex-1 flex-col p-2.5">

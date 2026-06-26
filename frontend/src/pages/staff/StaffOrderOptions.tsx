@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import axios from 'axios';
 import api from '../../services/api';
+import { cachedGet } from '../../services/apiCache';
+import { getHistoryRangeParams } from '../../utils/dateRangeParams';
 import ActionFeedback from '../../components/ActionFeedback';
 import TableRefreshButton from '../../components/TableRefreshButton';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
@@ -108,10 +110,12 @@ type OrdersPageVariant = 'staff' | 'admin';
 
 type StaffOrderOptionsProps = {
   variant?: OrdersPageVariant;
+  isActive?: boolean;
 };
 
 export default function StaffOrderOptions({
   variant = 'staff',
+  isActive = true,
 }: StaffOrderOptionsProps) {
   const isAdminView = variant === 'admin';
   const { user } = useAuth();
@@ -132,18 +136,25 @@ export default function StaffOrderOptions({
   const { feedback: pendingActionFeedback, setFeedback: setPendingActionFeedback } =
     useTimedFeedback();
 
-  const loadOrders = async () => {
+  const loadOrders = async (options?: { force?: boolean }) => {
     try {
       setOrdersLoading(true);
+      const rangeParams = getHistoryRangeParams(historyRange);
       const [ordersRes, partyRes] = await Promise.all([
-        api.get('/orders'),
-        api.get('/party-orders'),
+        cachedGet<StaffOrder[]>('/orders', {
+          params: rangeParams,
+          force: options?.force,
+        }),
+        cachedGet<PartyOrderApi[]>('/party-orders', {
+          params: rangeParams,
+          force: options?.force,
+        }),
       ]);
-      const retail: StaffOrder[] = Array.isArray(ordersRes.data)
-        ? ordersRes.data.map((o: StaffOrder) => ({ ...o, orderType: 'RETAIL' as const }))
+      const retail: StaffOrder[] = Array.isArray(ordersRes)
+        ? ordersRes.map((o: StaffOrder) => ({ ...o, orderType: 'RETAIL' as const }))
         : [];
-      const party: StaffOrder[] = Array.isArray(partyRes.data)
-        ? partyRes.data.map((p: PartyOrderApi) => {
+      const party: StaffOrder[] = Array.isArray(partyRes)
+        ? partyRes.map((p: PartyOrderApi) => {
             const lineItems = Array.isArray(p.lineItems) ? p.lineItems : [];
             return {
             id: p.id,
@@ -191,8 +202,11 @@ export default function StaffOrderOptions({
   };
 
   useEffect(() => {
+    if (!isActive) {
+      return;
+    }
     void loadOrders();
-  }, []);
+  }, [historyRange, isActive]);
 
   const rangeOrders = useMemo(() => {
     const now = new Date();
@@ -472,7 +486,7 @@ export default function StaffOrderOptions({
         delete next[orderId];
         return next;
       });
-      await loadOrders();
+      await loadOrders({ force: true });
     } catch (err) {
       let message =
         status === 'COMPLETED'
@@ -739,7 +753,7 @@ export default function StaffOrderOptions({
                   </p>
                   <TableRefreshButton
                     loading={ordersLoading}
-                    onRefresh={() => void loadOrders()}
+                    onRefresh={() => void loadOrders({ force: true })}
                     label="Refresh orders"
                   />
                 </div>

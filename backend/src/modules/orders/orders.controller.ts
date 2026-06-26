@@ -5,11 +5,13 @@ import {
   Get,
   Param,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { ListOrdersQueryDto } from './dto/list-orders-query.dto';
 import { ApiTags, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -45,8 +47,8 @@ export class OrdersController {
   }
 
   @Get()
-  list() {
-    return this.ordersService.findAll();
+  list(@Query() query: ListOrdersQueryDto) {
+    return this.ordersService.findAll(query);
   }
 
   @Get(':id')

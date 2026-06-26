@@ -137,8 +137,22 @@ export class OrdersService {
     return this.ordersRepo.save(order);
   }
 
-  async findAll() {
-    return this.ordersRepo.find({ relations: { items: { flavor: true } } });
+  async findAll(filters: { from?: string; to?: string } = {}) {
+    const qb = this.ordersRepo
+      .createQueryBuilder('order')
+      .leftJoinAndSelect('order.items', 'item')
+      .leftJoin('item.flavor', 'flavor')
+      .addSelect(['flavor.id', 'flavor.name'])
+      .orderBy('order.createdAt', 'DESC');
+
+    if (filters.from) {
+      qb.andWhere('order.createdAt >= :from', { from: new Date(filters.from) });
+    }
+    if (filters.to) {
+      qb.andWhere('order.createdAt <= :to', { to: new Date(filters.to) });
+    }
+
+    return qb.getMany();
   }
 
   async findOne(id: number | string) {

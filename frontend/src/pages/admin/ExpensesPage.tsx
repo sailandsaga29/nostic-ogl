@@ -1,9 +1,11 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ActionFeedback from '../../components/ActionFeedback';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import TableRefreshButton from '../../components/TableRefreshButton';
 import api from '../../services/api';
+import { cachedGet } from '../../services/apiCache';
+import type { AdminPageProps } from '../../types/adminPage';
 import axios from 'axios';
 
 const MONTH_NAMES = [
@@ -89,7 +91,8 @@ const expenseInPeriod = (
   return date.getFullYear() === year && date.getMonth() + 1 === monthNum;
 };
 
-export default function ExpensesPage() {
+export default function ExpensesPage({ isActive = true }: AdminPageProps) {
+  const hasLoadedRef = useRef(false);
   const [items, setItems] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [tableRefreshing, setTableRefreshing] = useState(false);
@@ -133,14 +136,16 @@ export default function ExpensesPage() {
       } else {
         setLoading(true);
       }
-      const resp = await api.get('/expenses');
-      let list: Expense[] = Array.isArray(resp.data) ? resp.data : [];
+      const resp = await cachedGet<Expense[]>('/expenses', {
+        force: isRefresh,
+      });
+      let list: Expense[] = Array.isArray(resp) ? resp : [];
 
-      if (list.length === 0) {
+      if (list.length === 0 && isActive) {
         try {
           await api.post('/expenses/seed');
-          const seeded = await api.get('/expenses');
-          list = Array.isArray(seeded.data) ? seeded.data : [];
+          const seeded = await cachedGet<Expense[]>('/expenses', { force: true });
+          list = Array.isArray(seeded) ? seeded : [];
         } catch {
           // seed endpoint may be unavailable; keep empty list
         }
@@ -156,11 +161,17 @@ export default function ExpensesPage() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
-    void loadExpenses();
-  }, [loadExpenses]);
+    if (!isActive || hasLoadedRef.current) {
+      return;
+    }
+
+    void loadExpenses().then(() => {
+      hasLoadedRef.current = true;
+    });
+  }, [isActive, loadExpenses]);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>([new Date().getFullYear()]);

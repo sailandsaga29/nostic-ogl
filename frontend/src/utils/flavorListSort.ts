@@ -54,9 +54,17 @@ export function sortFlavorList<T extends FlavorListSortRow>(
       );
       break;
     case 'stock':
-      list.sort(
-        (a, b) => (Number(a.stock ?? 0) - Number(b.stock ?? 0)) * dir,
-      );
+      list.sort((a, b) => {
+        const stockDiff = Number(a.stock ?? 0) - Number(b.stock ?? 0);
+        if (stockDiff !== 0) return stockDiff * dir;
+        return (
+          String(a.name ?? '')
+            .toLowerCase()
+            .localeCompare(String(b.name ?? '').toLowerCase(), 'en', {
+              sensitivity: 'base',
+            }) * dir
+        );
+      });
       break;
     case 'quantity':
       list.sort(

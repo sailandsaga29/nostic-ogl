@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import api from '../../services/api';
+import { useNavigate } from 'react-router-dom';
+import { cachedGet } from '../../services/apiCache';
 import { useAuth } from '../../context/AuthContext';
+import type { AdminPageProps } from '../../types/adminPage';
+import TableRefreshButton from '../../components/TableRefreshButton';
 import RevenueMilestoneCelebration from '../../components/RevenueMilestoneCelebration';
 import { getLoginDashboardQuote } from '../../utils/dashboardQuotes';
 import {
@@ -81,9 +83,8 @@ const isSameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 const isSameMonth = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ isActive = true }: AdminPageProps) {
   const navigate = useNavigate();
-  const location = useLocation();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -93,73 +94,77 @@ export default function AdminDashboard() {
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [totalProcurementAllTime, setTotalProcurementAllTime] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [showRevenueCelebration, setShowRevenueCelebration] = useState(false);
   const [quote] = useState(getLoginDashboardQuote);
   const hasLoadedDataRef = useRef(false);
-  const isDashboardActive = location.pathname === '/admin/dashboard';
+  const hasLoadedProcurementRef = useRef(false);
+  const isDashboardActive = isActive;
 
   const monthLabel = new Date().toLocaleDateString('en-IN', {
     month: 'long',
     year: 'numeric',
   });
 
-  const loadDashboardData = useCallback(async () => {
+  const loadLiveDashboardData = useCallback(async (options?: { force?: boolean }) => {
     const year = new Date().getFullYear();
     const month = new Date().getMonth() + 1;
+    const force = options?.force === true;
 
-    const loadProcurementAllTime = async () => {
-      try {
-        const yearsRes = await api.get('/flavors/meta/years');
-        const years: number[] = Array.isArray(yearsRes.data)
-          ? yearsRes.data
-          : [];
-
-        let procurementTotal = 0;
-        for (const y of years) {
-          const monthsRes = await api.get(`/flavors/meta/months/${y}`);
-          const months: number[] = Array.isArray(monthsRes.data)
-            ? monthsRes.data
-            : [];
-          const monthlyResults = await Promise.all(
-            months.map((m) => api.get(`/flavors/monthly/${y}/${m}`)),
-          );
-          for (const res of monthlyResults) {
-            const rows: MonthlyFlavor[] = Array.isArray(res.data)
-              ? res.data
-              : [];
-            procurementTotal += rows.reduce(
-              (sum, row) => sum + Number(row.revenue ?? 0),
-              0,
-            );
-          }
-        }
-        return procurementTotal;
-      } catch {
-        return 0;
-      }
-    };
-
-    const [ordersRes, partyRes, lowStockRes, monthlyRes, expensesRes, procurementTotal] =
+    const [ordersRes, partyRes, lowStockRes, monthlyRes, expensesRes] =
       await Promise.all([
-        api.get('/orders'),
-        api.get('/party-orders'),
-        api.get('/flavors/low-stock'),
-        api.get(`/flavors/monthly/${year}/${month}`),
-        api.get('/expenses'),
-        loadProcurementAllTime(),
+        cachedGet<Order[]>('/orders', { force }),
+        cachedGet<PartyOrder[]>('/party-orders', { force }),
+        cachedGet<LowStockFlavor[]>('/flavors/low-stock', {
+          ttl: 60_000,
+          force,
+        }),
+        cachedGet<MonthlyFlavor[]>(`/flavors/monthly/${year}/${month}`, {
+          ttl: 60_000,
+          force,
+        }),
+        cachedGet<ExpenseRow[]>('/expenses', { force }),
       ]);
 
-    setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
-    setPartyOrders(Array.isArray(partyRes.data) ? partyRes.data : []);
-    setLowStock(Array.isArray(lowStockRes.data) ? lowStockRes.data : []);
-    setMonthlyFlavors(
-      Array.isArray(monthlyRes.data) ? monthlyRes.data : [],
-    );
-    setExpenses(
-      Array.isArray(expensesRes.data) ? expensesRes.data : [],
-    );
-    setTotalProcurementAllTime(procurementTotal);
+    setOrders(Array.isArray(ordersRes) ? ordersRes : []);
+    setPartyOrders(Array.isArray(partyRes) ? partyRes : []);
+    setLowStock(Array.isArray(lowStockRes) ? lowStockRes : []);
+    setMonthlyFlavors(Array.isArray(monthlyRes) ? monthlyRes : []);
+    setExpenses(Array.isArray(expensesRes) ? expensesRes : []);
   }, []);
+
+  const loadProcurementAllTime = useCallback(async (options?: { force?: boolean }) => {
+    const result = await cachedGet<{ total: number }>(
+      '/flavors/procurement/total',
+      { ttl: 300_000, force: options?.force },
+    );
+    setTotalProcurementAllTime(Number(result.total ?? 0));
+  }, []);
+
+  const loadDashboardData = useCallback(
+    async (options?: { force?: boolean }) => {
+      await Promise.all([
+        loadLiveDashboardData(options),
+        loadProcurementAllTime(options),
+      ]);
+    },
+    [loadLiveDashboardData, loadProcurementAllTime],
+  );
+
+  const handleRefreshAll = useCallback(async () => {
+    if (refreshing) return;
+
+    setRefreshing(true);
+    try {
+      await loadDashboardData({ force: true });
+      hasLoadedDataRef.current = true;
+      hasLoadedProcurementRef.current = true;
+    } catch {
+      // Keep existing dashboard data on refresh failure.
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, loadDashboardData]);
 
   useEffect(() => {
     if (!isDashboardActive || authLoading || !isAuthenticated) {
@@ -167,6 +172,10 @@ export default function AdminDashboard() {
     }
 
     if (!localStorage.getItem('accessToken')) {
+      return;
+    }
+
+    if (hasLoadedDataRef.current && hasLoadedProcurementRef.current) {
       return;
     }
 
@@ -182,6 +191,7 @@ export default function AdminDashboard() {
         await loadDashboardData();
         if (mounted) {
           hasLoadedDataRef.current = true;
+          hasLoadedProcurementRef.current = true;
         }
       } catch {
         if (mounted && !hasLoadedDataRef.current) {
@@ -218,7 +228,7 @@ export default function AdminDashboard() {
     }
 
     const refreshSilently = () => {
-      void loadDashboardData()
+      void loadLiveDashboardData({ force: true })
         .then(() => {
           hasLoadedDataRef.current = true;
         })
@@ -238,7 +248,7 @@ export default function AdminDashboard() {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [isDashboardActive, authLoading, isAuthenticated, loadDashboardData]);
+  }, [isDashboardActive, authLoading, isAuthenticated, loadLiveDashboardData]);
 
   const insights = useMemo(() => {
     const now = new Date();
@@ -376,13 +386,23 @@ export default function AdminDashboard() {
       0,
     );
 
+    const lowStockSorted = [...lowStock].sort((a, b) => {
+      const stockDiff = Number(a.stock ?? 0) - Number(b.stock ?? 0);
+      if (stockDiff !== 0) return stockDiff;
+      return String(a.name ?? '')
+        .toLowerCase()
+        .localeCompare(String(b.name ?? '').toLowerCase(), 'en', {
+          sensitivity: 'base',
+        });
+    });
+
     return {
       todayRevenue,
       todayChangePct,
       todayOrderCount: todayOrders.length,
       pendingOnline,
       pendingCash,
-      lowStock,
+      lowStock: lowStockSorted,
       monthSales,
       monthProcurement,
       monthNet,
@@ -455,7 +475,15 @@ export default function AdminDashboard() {
         />
       )}
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="rounded-[2rem] bg-gradient-to-r from-[#00a8c5] to-[#63d471] p-6 sm:p-8">
+        <div className="relative rounded-[2rem] bg-gradient-to-r from-[#00a8c5] to-[#63d471] p-6 sm:p-8">
+          <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+            <TableRefreshButton
+              onRefresh={() => void handleRefreshAll()}
+              loading={refreshing}
+              label="Refresh dashboard"
+              className="h-8 w-8 border-white/30 bg-white/15 text-white shadow-none hover:bg-white/25 hover:text-white"
+            />
+          </div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-white/80">
             {new Date().toLocaleDateString('en-IN', {
               weekday: 'long',
@@ -675,7 +703,9 @@ export default function AdminDashboard() {
                   </ul>
                   <button
                     type="button"
-                    onClick={() => navigate('/admin/flavors')}
+                    onClick={() =>
+                      navigate('/admin/flavors?sort=stock&dir=asc')
+                    }
                     className="mt-3 text-sm font-semibold text-red-900 underline"
                   >
                     Open →

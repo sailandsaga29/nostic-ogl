@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { Suspense, lazy } from 'react';
 import {
   Routes,
   Route,
@@ -7,108 +8,111 @@ import {
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
-import AdminLayout from './components/Layout/AdminLayout';
-// Auth Pages
-import Login from './pages/Login';
-import Unauthorized from './pages/Unauthorized';
 
-// Manager
-import ManagerDashboard from './pages/manager/ManagerDashboard';
+const AdminLayout = lazy(() => import('./components/Layout/AdminLayout'));
+const Login = lazy(() => import('./pages/Login'));
+const Unauthorized = lazy(() => import('./pages/Unauthorized'));
+const ManagerDashboard = lazy(() => import('./pages/manager/ManagerDashboard'));
+const StaffPOS = lazy(() => import('./pages/staff/StaffPOS'));
+const StaffOrderOptions = lazy(() => import('./pages/staff/StaffOrderOptions'));
 
-// Staff
-import StaffPOS from './pages/staff/StaffPOS';
-import StaffOrderOptions from './pages/staff/StaffOrderOptions';
+function RouteFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#f6f7f9] text-slate-600">
+      Loading…
+    </div>
+  );
+}
 
 function AppRoutes() {
   const { isAuthenticated, getRedirectPath } = useAuth();
 
   return (
-    <Routes>
-      <Route
-        path="/"
-        element={
-          isAuthenticated ? (
-            <Navigate to={getRedirectPath()} replace />
-          ) : (
-            <Login />
-          )
-        }
-      />
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            isAuthenticated ? (
+              <Navigate to={getRedirectPath()} replace />
+            ) : (
+              <Login />
+            )
+          }
+        />
 
-      <Route
-        path="/login"
-        element={
-          isAuthenticated ? (
-            <Navigate to={getRedirectPath()} replace />
-          ) : (
-            <Login />
-          )
-        }
-      />
+        <Route
+          path="/login"
+          element={
+            isAuthenticated ? (
+              <Navigate to={getRedirectPath()} replace />
+            ) : (
+              <Login />
+            )
+          }
+        />
 
-      <Route
-        path="/unauthorized"
-        element={<Unauthorized />}
-      />
+        <Route
+          path="/unauthorized"
+          element={<Unauthorized />}
+        />
 
-      {/* Admin — header + keep-alive pages for instant revisits */}
-      <Route
-        path="/admin/*"
-        element={
-          <ProtectedRoute allowedRoles={['super_admin']}>
-            <AdminLayout />
-          </ProtectedRoute>
-        }
-      />
+        <Route
+          path="/admin/*"
+          element={
+            <ProtectedRoute allowedRoles={['super_admin']}>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Manager */}
-      <Route
-        path="/manager/dashboard"
-        element={
-          <ProtectedRoute
-            allowedRoles={['super_admin', 'manager']}
-          >
-            <ManagerDashboard />
-          </ProtectedRoute>
-        }
-      />
+        <Route
+          path="/manager/dashboard"
+          element={
+            <ProtectedRoute
+              allowedRoles={['super_admin', 'manager']}
+            >
+              <ManagerDashboard />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Staff */}
-      <Route
-        path="/staff/pos"
-        element={
-          <ProtectedRoute
-            allowedRoles={[
-              'super_admin',
-              'admin',
-              'manager',
-              'staff',
-            ]}
-          >
-            <StaffPOS />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/staff/orders"
-        element={
-          <ProtectedRoute
-            allowedRoles={[
-              'super_admin',
-              'admin',
-              'manager',
-              'staff',
-            ]}
-          >
-            <StaffOrderOptions />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="*"
-        element={<Navigate to="/" replace />}
-      />
-    </Routes>
+        <Route
+          path="/staff/pos"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                'super_admin',
+                'admin',
+                'manager',
+                'staff',
+              ]}
+            >
+              <StaffPOS />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/staff/orders"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                'super_admin',
+                'admin',
+                'manager',
+                'staff',
+              ]}
+            >
+              <StaffOrderOptions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="*"
+          element={<Navigate to="/" replace />}
+        />
+      </Routes>
+    </Suspense>
   );
 }
 

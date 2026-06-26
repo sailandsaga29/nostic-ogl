@@ -5,8 +5,10 @@ import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Eye, EyeOff } from 'lucide-react';
 import TableRefreshButton from '../../components/TableRefreshButton';
 import { API_BASE_URL } from '../../config/env';
@@ -18,6 +20,7 @@ import {
   type FlavorListSortKey,
   type SortDirection,
 } from '../../utils/flavorListSort';
+import type { AdminPageProps } from '../../types/adminPage';
 
 const MONTH_NAMES = [
   'January',
@@ -59,7 +62,7 @@ const BASE_FLAVOR_CATEGORIES = [
   'Cones',
   '100 ML',
   '500 ML',
-  'SIP UPS',
+  'SIP Ups',
   'Sorbet',
 ] as const;
 
@@ -81,6 +84,12 @@ const emptyNewFlavorForm = () => ({
   isSeasonal: false,
 });
 
+const normalizeCategory = (category: string) =>
+  category.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const categoriesMatch = (a: string, b: string) =>
+  normalizeCategory(a) === normalizeCategory(b);
+
 type FlavorItem = {
   id: number;
   name: string;
@@ -97,7 +106,9 @@ type FlavorItem = {
   isSeasonal?: boolean;
 };
 
-export default function Flavors() {
+export default function Flavors({ isActive = true }: AdminPageProps) {
+  const hasLoadedRef = useRef(false);
+  const [searchParams] = useSearchParams();
   /*
   =========================================
   API
@@ -136,6 +147,18 @@ export default function Flavors() {
     setSortBy(key);
     setSortDir('asc');
   };
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    const sort = searchParams.get('sort');
+    const dir = searchParams.get('dir');
+    if (sort !== 'stock' || dir !== 'asc') return;
+
+    setSortBy('stock');
+    setSortDir('asc');
+    setPage(1);
+  }, [isActive, searchParams]);
 
   const [showCreateModal, setShowCreateModal] =
     useState<boolean>(false);
@@ -400,19 +423,27 @@ export default function Flavors() {
   };
 
   useEffect(() => {
-    // initial load: fetch all flavors and available years
-    fetchFlavors();
+    if (!isActive || hasLoadedRef.current) {
+      return;
+    }
+
+    hasLoadedRef.current = true;
     fetchAvailableYears();
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
-    if (availableYears.length > 0) {
-      fetchMonthsByYear(selectedYear);
+    if (!isActive || availableYears.length === 0) {
+      return;
     }
-  }, [selectedYear]);
+    fetchMonthsByYear(selectedYear);
+  }, [isActive, selectedYear, availableYears.length]);
 
   // Whenever month or year changes, refresh the table data
   useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
     const monthNum = getMonthNumber(selectedMonth);
 
     // If no month selected => show all
@@ -583,14 +614,12 @@ export default function Flavors() {
   */
 
   const filteredData = useMemo(() => {
-    let filtered =
+    const filtered =
       selectedCategory === 'All'
         ? [...data]
-        : data.filter(
-          (x) =>
-            x.category ===
-            selectedCategory
-        );
+        : data.filter((x) =>
+            categoriesMatch(x.category ?? '', selectedCategory),
+          );
 
     return sortFlavorList(filtered, sortBy, sortDir);
   }, [selectedCategory, data, sortBy, sortDir]);

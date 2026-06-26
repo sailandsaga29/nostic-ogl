@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository, MoreThan, In } from 'typeorm';
 import { Flavor } from './entities/flavor.entity';
 import { FlavorMonthly } from './entities/flavor-monthly.entity';
 import { OrderStatus } from '../orders/entities/order.entity';
@@ -66,7 +66,22 @@ export class FlavorsService {
   }
 
   async getActive() {
-    return this.flavorsRepo.find({ where: { isActive: true } });
+    return this.flavorsRepo
+      .createQueryBuilder('flavor')
+      .select([
+        'flavor.id',
+        'flavor.name',
+        'flavor.category',
+        'flavor.description',
+        'flavor.price',
+        'flavor.stock',
+        'flavor.image',
+        'flavor.isActive',
+        'flavor.updatedAt',
+      ])
+      .where('flavor.isActive = :isActive', { isActive: true })
+      .orderBy('flavor.name', 'ASC')
+      .getMany();
   }
 
   async getLowStock() {
@@ -106,6 +121,31 @@ export class FlavorsService {
     );
   }
 
+  private async getUnitsSoldByFlavorInMonth(
+    year: number,
+    month: number,
+  ): Promise<Map<number, number>> {
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+
+    const rows = await this.orderItemRepo
+      .createQueryBuilder('oi')
+      .innerJoin('oi.order', 'o')
+      .select('oi.flavorId', 'flavorId')
+      .addSelect('COALESCE(SUM(oi.quantity), 0)', 'total')
+      .where('o.status = :status', { status: OrderStatus.COMPLETED })
+      .andWhere('o.createdAt >= :start', { start })
+      .andWhere('o.createdAt < :end', { end })
+      .groupBy('oi.flavorId')
+      .getRawMany<{ flavorId: string; total: string }>();
+
+    const soldByFlavor = new Map<number, number>();
+    for (const row of rows) {
+      soldByFlavor.set(Number(row.flavorId), Number(row.total ?? 0));
+    }
+    return soldByFlavor;
+  }
+
   private async getUnitsSoldInMonth(
     flavorId: number,
     year: number,
@@ -140,18 +180,35 @@ export class FlavorsService {
       return false;
     }
 
-    const checks = await Promise.all(
-      records.map(async (record) => {
-        const sold = await this.getUnitsSoldInMonth(
-          record.flavorId,
-          year,
-          month,
-        );
-        return this.monthHadActivity(record, sold);
-      }),
+    const soldByFlavor = await this.getUnitsSoldByFlavorInMonth(year, month);
+    return records.some((record) =>
+      this.monthHadActivity(record, soldByFlavor.get(record.flavorId) ?? 0),
     );
+  }
 
-    return checks.some(Boolean);
+  private buildCarryForwardMap(
+    flavorIds: number[],
+    prevRecords: FlavorMonthly[],
+  ): Map<number, number> {
+    const prevMap = new Map(
+      prevRecords.map((record) => [record.flavorId, record]),
+    );
+    const carryMap = new Map<number, number>();
+
+    for (const flavorId of flavorIds) {
+      const prev = prevMap.get(flavorId);
+      carryMap.set(
+        flavorId,
+        prev
+          ? Math.max(
+              0,
+              Number(prev.carryForwarded ?? 0) + Number(prev.quantity ?? 0),
+            )
+          : 0,
+      );
+    }
+
+    return carryMap;
   }
 
   private async resolveCarryForwarded(
@@ -159,7 +216,10 @@ export class FlavorsService {
     year: number,
     month: number,
   ): Promise<number> {
-    const { year: prevYear, month: prevMonth } = this.previousMonth(year, month);
+    const { year: prevYear, month: prevMonth } = this.previousMonth(
+      year,
+      month,
+    );
     const prev = await this.flavorMonthlyRepo.findOne({
       where: { flavorId, year: prevYear, month: prevMonth },
     });
@@ -174,7 +234,11 @@ export class FlavorsService {
     );
   }
 
-  private async ensureMonthlyRecord(flavor: Flavor, year: number, month: number) {
+  private async ensureMonthlyRecord(
+    flavor: Flavor,
+    year: number,
+    month: number,
+  ) {
     const existing = await this.flavorMonthlyRepo.findOne({
       where: { flavorId: flavor.id, year, month },
     });
@@ -256,6 +320,37 @@ export class FlavorsService {
     return months.map((m) => m.month);
   }
 
+  async getProcurementTotalAllTime() {
+    const result = await this.flavorMonthlyRepo
+      .createQueryBuilder('fm')
+      .select('COALESCE(SUM(fm.quantity * fm.rate), 0)', 'total')
+      .addSelect('COALESCE(SUM(fm.quantity), 0)', 'units')
+      .getRawOne<{ total: string; units: string }>();
+
+    return {
+      total: Number(result?.total ?? 0),
+      units: Number(result?.units ?? 0),
+    };
+  }
+
+  async getProcurementTotalForPeriod(year: number, month?: number) {
+    const qb = this.flavorMonthlyRepo
+      .createQueryBuilder('fm')
+      .select('COALESCE(SUM(fm.quantity * fm.rate), 0)', 'total')
+      .addSelect('COALESCE(SUM(fm.quantity), 0)', 'units')
+      .where('fm.year = :year', { year });
+
+    if (month !== undefined) {
+      qb.andWhere('fm.month = :month', { month });
+    }
+
+    const result = await qb.getRawOne<{ total: string; units: string }>();
+    return {
+      total: Number(result?.total ?? 0),
+      units: Number(result?.units ?? 0),
+    };
+  }
+
   async getMonthlyStats(year: number, month: number) {
     if (this.isFutureMonth(year, month)) {
       return [];
@@ -269,9 +364,7 @@ export class FlavorsService {
     } else {
       const flavors = await this.flavorsRepo.find();
       await Promise.all(
-        flavors.map((flavor) =>
-          this.ensureMonthlyRecord(flavor, year, month),
-        ),
+        flavors.map((flavor) => this.ensureMonthlyRecord(flavor, year, month)),
       );
     }
 
@@ -280,39 +373,42 @@ export class FlavorsService {
       relations: { flavor: true },
     });
 
-    return Promise.all(
-      items.map(async (it) => {
-        const rate = Number(it.rate || it.flavor.price || 0);
-        const quantity = Number(it.quantity || 0);
-        const carryForwarded = await this.resolveCarryForwarded(
-          it.flavorId,
-          year,
-          month,
-        );
+    if (items.length === 0) {
+      return [];
+    }
 
-        if (Number(it.carryForwarded ?? 0) !== carryForwarded) {
-          it.carryForwarded = carryForwarded;
-          await this.flavorMonthlyRepo.save(it);
-        }
-
-        return {
-          id: it.flavor.id,
-          name: it.flavor.name,
-          category: it.category ?? it.flavor.category,
-          description: it.flavor.description,
-          carryForwarded,
-          quantity,
-          stock: it.flavor.stock,
-          minStock: it.flavor.minStock,
-          price: rate,
-          revenue: quantity * rate,
-          image: it.flavor.image,
-          isActive: it.flavor.isActive,
-          isSeasonal: it.flavor.isSeasonal,
-          month: it.month,
-          year: it.year,
-        };
-      }),
+    const { year: prevYear, month: prevMonth } = this.previousMonth(
+      year,
+      month,
     );
+    const flavorIds = items.map((item) => item.flavorId);
+    const prevRecords = await this.flavorMonthlyRepo.find({
+      where: { year: prevYear, month: prevMonth, flavorId: In(flavorIds) },
+    });
+    const carryForwardMap = this.buildCarryForwardMap(flavorIds, prevRecords);
+
+    return items.map((it) => {
+      const rate = Number(it.rate || it.flavor.price || 0);
+      const quantity = Number(it.quantity || 0);
+      const carryForwarded = carryForwardMap.get(it.flavorId) ?? 0;
+
+      return {
+        id: it.flavor.id,
+        name: it.flavor.name,
+        category: it.category ?? it.flavor.category,
+        description: it.flavor.description,
+        carryForwarded,
+        quantity,
+        stock: it.flavor.stock,
+        minStock: it.flavor.minStock,
+        price: rate,
+        revenue: quantity * rate,
+        image: it.flavor.image,
+        isActive: it.flavor.isActive,
+        isSeasonal: it.flavor.isSeasonal,
+        month: it.month,
+        year: it.year,
+      };
+    });
   }
 }
