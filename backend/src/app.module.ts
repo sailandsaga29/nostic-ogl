@@ -22,6 +22,7 @@ import { Expense } from './modules/expenses/entities/expense.entity';
 import { RefreshToken } from './auth/entities/refresh-token.entity';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { normalizeDatabaseUrl } from './config/normalizeDatabaseUrl';
 import { runStartupMigrations } from './config/runStartupMigrations';
 
 const entities = [
@@ -53,7 +54,9 @@ const entities = [
       useFactory: async (configService: ConfigService) => {
         const synchronize =
           configService.get<string>('DB_SYNCHRONIZE', 'false') === 'true';
-        const databaseUrl = configService.get<string>('DATABASE_URL');
+        const databaseUrl = normalizeDatabaseUrl(
+          configService.get<string>('DATABASE_URL'),
+        );
 
         const buildConfig = () => {
           if (databaseUrl) {
@@ -73,7 +76,9 @@ const entities = [
             type: 'postgres' as const,
             host: configService.get<string>('DB_HOST'),
             port: Number(configService.get('DB_PORT') ?? 5432),
-            username: configService.get<string>('DB_USERNAME'),
+            username:
+              configService.get<string>('DB_USERNAME') ??
+              configService.get<string>('DB_USER'),
             password: configService.get<string>('DB_PASSWORD'),
             database: configService.get<string>('DB_NAME'),
             entities,

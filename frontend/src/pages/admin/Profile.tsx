@@ -65,10 +65,7 @@ export default function Profile() {
                   {user?.role?.replace('_', ' ')}
                 </p>
               </div>
-
-              <button className="bg-gradient-to-r from-[#00a8c5] to-[#63d471] text-white px-6 py-3 rounded-2xl shadow hover:opacity-90 transition">
-                Edit Profile
-              </button>
+              
             </div>
           </div>
         </div>

@@ -14,6 +14,7 @@ import { ApiTags, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { FlavorsService } from './flavors.service';
 import { CreateFlavorDto } from './dto/create-flavor.dto';
 import { UpdateFlavorDto } from './dto/update-flavor.dto';
+import { BulkUpdateFlavorsDto } from './dto/bulk-update-flavors.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -106,6 +107,26 @@ export class FlavorsController {
   @Get('monthly/:year/:month')
   getMonthlyByYearMonth(@Param('year') year: string, @Param('month') month: string) {
     return this.flavorsService.getMonthlyStats(Number(year), Number(month));
+  }
+
+  @Put('bulk-update')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @ApiBody({
+    description: 'Bulk update flavor payloads',
+    type: BulkUpdateFlavorsDto,
+    examples: {
+      default: {
+        summary: 'Update multiple flavors',
+        value: {
+          items: [
+            { id: 1, name: 'Mango Delight', category: 'Popsicles', price: 130, stock: 20 },
+          ],
+        },
+      },
+    },
+  })
+  bulkUpdate(@Body() body: BulkUpdateFlavorsDto) {
+    return this.flavorsService.bulkUpdate(body.items);
   }
 
   @Get(':id')

@@ -2,14 +2,9 @@
 
 import ActionFeedback from '../../components/ActionFeedback';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Eye, EyeOff } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import TableRefreshButton from '../../components/TableRefreshButton';
 import { API_BASE_URL } from '../../config/env';
 import { sortByName } from '../../utils/sortByName';
@@ -21,6 +16,8 @@ import {
   type SortDirection,
 } from '../../utils/flavorListSort';
 import type { AdminPageProps } from '../../types/adminPage';
+import { getMemberPrice } from '../../utils/flavorPricing';
+import { formatRupeeAmount } from '../../utils/partyOrderCalc';
 
 const MONTH_NAMES = [
   'January',
@@ -83,6 +80,19 @@ const emptyNewFlavorForm = () => ({
   isActive: true,
   isSeasonal: false,
 });
+
+const flavorToForm = (flavor: FlavorItem) => ({
+  name: flavor.name ?? '',
+  category: flavor.category ?? '',
+  description: flavor.description ?? '',
+  price: Number(flavor.price ?? 0),
+  stock: Number(flavor.stock ?? 0),
+  image: flavor.image ?? '',
+  isActive: flavor.isActive !== false,
+  isSeasonal: flavor.isSeasonal === true,
+});
+
+type FlavorForm = ReturnType<typeof emptyNewFlavorForm>;
 
 const normalizeCategory = (category: string) =>
   category.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -162,6 +172,11 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
   const [showCreateModal, setShowCreateModal] =
     useState<boolean>(false);
+  const [editingFlavorId, setEditingFlavorId] = useState<number | null>(null);
+  const [isBulkEditing, setIsBulkEditing] = useState(false);
+  const [bulkEditDrafts, setBulkEditDrafts] = useState<Record<number, FlavorForm>>(
+    {},
+  );
 
   const [availableYears, setAvailableYears] =
     useState<number[]>([]);
@@ -179,26 +194,14 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
   const { feedback: createFeedback, setFeedback: setCreateFeedback } =
     useTimedFeedback();
-  const { feedback: stockRowFeedback, setFeedback: setStockRowFeedback } =
+  const { feedback: editRowFeedback, setFeedback: setEditRowFeedback } =
     useTimedFeedback();
-  const [stockRowFeedbackId, setStockRowFeedbackId] = useState<number | null>(
-    null,
-  );
-  const { feedback: statusRowFeedback, setFeedback: setStatusRowFeedback } =
-    useTimedFeedback();
-  const [statusRowFeedbackId, setStatusRowFeedbackId] = useState<number | null>(
-    null,
-  );
-  const [stockAdjustId, setStockAdjustId] = useState<number | null>(null);
-  const [stockAdjustQty, setStockAdjustQty] = useState('1');
+  const [editRowFeedbackId, setEditRowFeedbackId] = useState<number | null>(null);
+  const isEditingFlavor = editingFlavorId !== null;
 
   useEffect(() => {
-    if (!stockRowFeedback) setStockRowFeedbackId(null);
-  }, [stockRowFeedback]);
-
-  useEffect(() => {
-    if (!statusRowFeedback) setStatusRowFeedbackId(null);
-  }, [statusRowFeedback]);
+    if (!editRowFeedback) setEditRowFeedbackId(null);
+  }, [editRowFeedback]);
 
   /*
   =========================================
@@ -373,7 +376,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
           minStock: item.minStock,
           price: item.price,
           revenue:
-            item.stock * item.price,
+            Number(item.stock ?? 0) * getMemberPrice(Number(item.price ?? 0)),
           image: item.image,
           isActive: item.isActive,
           isSeasonal: item.isSeasonal,
@@ -498,112 +501,205 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
     }
   };
 
-  const adjustStock = async (
-    id: number,
-    change: number
-  ) => {
-    try {
-      const response = await fetch(
-        `${API_URL}/${id}/stock`,
-        {
-          method: 'PATCH',
+  const closeFlavorModal = () => {
+    setShowCreateModal(false);
+    setEditingFlavorId(null);
+    setNewFlavor(emptyNewFlavorForm());
+    setCreateFeedback(null);
+  };
 
-          headers: {
-            'Content-Type':
-              'application/json',
-
-            Authorization: `Bearer ${token}`,
-          },
-
-          body: JSON.stringify({
-            change,
-          }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        setStockRowFeedbackId(id);
-        setStockRowFeedback({
-          type: 'error',
-          message: `Stock update failed: ${result?.message || response.statusText}`,
-        });
-        return;
-      }
-
-      setStockRowFeedbackId(id);
-      setStockRowFeedback({
-        type: 'success',
-        message: 'Stock updated',
-      });
-
-      setData((prev) =>
-        prev.map((item) => {
-          if (item.id !== id) {
-            return item;
-          }
-
-          const newStock = Number(item.stock || 0) + change;
-          const quantityDelta = change > 0 ? change : 0;
-          const newQuantity = (item.quantity ?? 0) + quantityDelta;
-
-          return {
-            ...item,
-            stock: newStock,
-            quantity: newQuantity,
-            revenue: newQuantity * item.price,
-          };
-        })
-      );
-
-      refreshFlavors();
-    } catch {
-      setStockRowFeedbackId(id);
-      setStockRowFeedback({
-        type: 'error',
-        message: 'Stock update failed',
-      });
+  const cancelInlineEdit = (clearFeedback = true) => {
+    setEditingFlavorId(null);
+    setNewFlavor(emptyNewFlavorForm());
+    if (clearFeedback) {
+      setEditRowFeedback(null);
+      setEditRowFeedbackId(null);
     }
   };
 
-  const applyStockAdjust = (id: number) => {
-    const quantity = Number(stockAdjustQty);
-    if (Number.isNaN(quantity) || quantity <= 0) {
-      setStockRowFeedbackId(id);
-      setStockRowFeedback({
+  const openInlineEdit = (item: FlavorItem) => {
+    setEditingFlavorId(item.id);
+    setNewFlavor(flavorToForm(item));
+    setEditRowFeedback(null);
+    setEditRowFeedbackId(null);
+  };
+
+  const saveInlineEdit = async (id: number) => {
+    const name = newFlavor.name.trim();
+    if (!name) {
+      setEditRowFeedbackId(id);
+      setEditRowFeedback({
         type: 'error',
-        message: 'Enter valid quantity',
+        message: 'Flavor name is required',
       });
       return;
     }
-    setStockAdjustId(null);
-    void adjustStock(id, quantity);
+    if (!newFlavor.category) {
+      setEditRowFeedbackId(id);
+      setEditRowFeedback({
+        type: 'error',
+        message: 'Please select a category',
+      });
+      return;
+    }
+    if (Number(newFlavor.price) < 0) {
+      setEditRowFeedbackId(id);
+      setEditRowFeedback({
+        type: 'error',
+        message: 'Price must be 0 or greater',
+      });
+      return;
+    }
+    if (Number(newFlavor.stock) < 0) {
+      setEditRowFeedbackId(id);
+      setEditRowFeedback({
+        type: 'error',
+        message: 'Stock must be 0 or greater',
+      });
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      name,
+      category: newFlavor.category,
+      price: Number(newFlavor.price),
+      stock: Number(newFlavor.stock),
+      isActive: newFlavor.isActive,
+      isSeasonal: newFlavor.isSeasonal,
+    };
+
+    const description = newFlavor.description.trim();
+    payload.description = description;
+
+    const image = newFlavor.image.trim();
+    payload.image = image;
+
+    try {
+      setEditRowFeedback(null);
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => null);
+        const msg =
+          typeof errBody?.message === 'string'
+            ? errBody.message
+            : Array.isArray(errBody?.message)
+              ? errBody.message.join(', ')
+              : 'Failed to update flavor';
+        throw new Error(msg);
+      }
+
+      cancelInlineEdit(false);
+      setEditRowFeedbackId(id);
+      setEditRowFeedback({
+        type: 'success',
+        message: 'Flavor updated',
+      });
+      refreshFlavors();
+    } catch (err) {
+      setEditRowFeedbackId(id);
+      setEditRowFeedback({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Update failed',
+      });
+    }
   };
 
-  const toggleFlavorActive = async (
-    id: number,
-    currentState = false
-  ) => {
+  const saveBulkEdit = async () => {
+    const items = paginatedData.map((item) => ({
+      id: item.id,
+      ...(bulkEditDrafts[item.id] ?? flavorToForm(item)),
+    }));
+
+    for (const item of items) {
+      const name = item.name.trim();
+      if (!name) {
+        setEditRowFeedbackId(item.id);
+        setEditRowFeedback({
+          type: 'error',
+          message: 'Flavor name is required',
+        });
+        return;
+      }
+      if (!item.category) {
+        setEditRowFeedbackId(item.id);
+        setEditRowFeedback({
+          type: 'error',
+          message: 'Please select a category',
+        });
+        return;
+      }
+      if (Number(item.price) < 0) {
+        setEditRowFeedbackId(item.id);
+        setEditRowFeedback({
+          type: 'error',
+          message: 'Price must be 0 or greater',
+        });
+        return;
+      }
+      if (Number(item.stock) < 0) {
+        setEditRowFeedbackId(item.id);
+        setEditRowFeedback({
+          type: 'error',
+          message: 'Stock must be 0 or greater',
+        });
+        return;
+      }
+    }
+
     try {
-      await fetch(`${API_URL}/${id}`, {
+      setEditRowFeedback(null);
+      const response = await fetch(`${API_URL}/bulk-update`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          isActive: !currentState,
+          items: items.map((item) => ({
+            id: item.id,
+            name: item.name.trim(),
+            category: item.category,
+            description: item.description.trim(),
+            price: Number(item.price),
+            stock: Number(item.stock),
+            image: item.image.trim(),
+            isActive: item.isActive,
+            isSeasonal: item.isSeasonal,
+          })),
         }),
       });
 
-      refreshFlavors();
-    } catch {
-      setStatusRowFeedbackId(id);
-      setStatusRowFeedback({
-        type: 'error',
-        message: 'Failed to update flavor status',
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => null);
+        const msg =
+          typeof errBody?.message === 'string'
+            ? errBody.message
+            : Array.isArray(errBody?.message)
+              ? errBody.message.join(', ')
+              : 'Failed to update flavors';
+        throw new Error(msg);
+      }
+
+      cancelBulkEdit();
+      setCreateFeedback({
+        type: 'success',
+        message: 'Flavor list updated',
       });
+      refreshFlavors();
+    } catch (err) {
+      setEditRowFeedback({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Bulk update failed',
+      });
+      setEditRowFeedbackId(items[0]?.id ?? null);
     }
   };
 
@@ -641,6 +737,37 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
     const start = (page - 1) * FLAVORS_PER_PAGE;
     return filteredData.slice(start, start + FLAVORS_PER_PAGE);
   }, [filteredData, page]);
+
+  const startBulkEdit = () => {
+    const drafts = Object.fromEntries(
+      paginatedData.map((item) => [item.id, flavorToForm(item)]),
+    ) as Record<number, FlavorForm>;
+    setBulkEditDrafts(drafts);
+    setIsBulkEditing(true);
+    setEditingFlavorId(null);
+    setEditRowFeedback(null);
+    setEditRowFeedbackId(null);
+  };
+
+  const cancelBulkEdit = () => {
+    setIsBulkEditing(false);
+    setBulkEditDrafts({});
+    setEditRowFeedback(null);
+    setEditRowFeedbackId(null);
+  };
+
+  const updateBulkDraft = (
+    id: number,
+    patch: Partial<FlavorForm>,
+  ) => {
+    setBulkEditDrafts((prev) => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        ...patch,
+      },
+    }));
+  };
 
   const pageStart =
     filteredData.length === 0 ? 0 : (page - 1) * FLAVORS_PER_PAGE + 1;
@@ -754,7 +881,12 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
               <button
                 type="button"
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  setEditingFlavorId(null);
+                  setNewFlavor(emptyNewFlavorForm());
+                  setCreateFeedback(null);
+                  setShowCreateModal(true);
+                }}
                 className="shrink-0 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-teal-600"
               >
                 + Add Flavor
@@ -812,8 +944,14 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
             <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden">
               {/* HEADER */}
               <div className="bg-gradient-to-r from-[#8bd8bf] to-[#33c3b3] px-8 py-6">
-                <h2 className="text-3xl font-bold text-white">Add New Flavor</h2>
-                <p className="text-white/90 mt-2">Create a new handcrafted flavor</p>
+                <h2 className="text-3xl font-bold text-white">
+                  {isEditingFlavor ? 'Edit Flavor' : 'Add New Flavor'}
+                </h2>
+                <p className="mt-2 text-white/90">
+                  {isEditingFlavor
+                    ? 'Update this flavor entry'
+                    : 'Create a new handcrafted flavor'}
+                </p>
               </div>
 
               {/* BODY */}
@@ -862,7 +1000,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
                   <div>
                     <label className="mb-2 block text-sm text-gray-500">
-                      Price
+                      Staff Price
                       <RequiredMark />
                     </label>
                     <input
@@ -951,10 +1089,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                 <div className="flex flex-col items-end gap-2 pt-4">
                   <div className="flex justify-end gap-4">
                   <button
-                    onClick={() => {
-                      setShowCreateModal(false);
-                      setCreateFeedback(null);
-                    }}
+                    onClick={closeFlavorModal}
                     className="px-6 py-3 rounded-2xl border border-gray-200 hover:bg-gray-100 transition"
                   >
                     Cancel
@@ -1009,8 +1144,12 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
                       try {
                         setCreateFeedback(null);
-                        const response = await fetch(API_URL, {
-                          method: 'POST',
+                        const response = await fetch(
+                          isEditingFlavor
+                            ? `${API_URL}/${editingFlavorId}`
+                            : API_URL,
+                          {
+                          method: isEditingFlavor ? 'PUT' : 'POST',
                           headers: {
                             'Content-Type': 'application/json',
                             Authorization: `Bearer ${token}`,
@@ -1025,17 +1164,20 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                               ? errBody.message
                               : Array.isArray(errBody?.message)
                                 ? errBody.message.join(', ')
-                                : 'Failed to create flavor';
+                                : isEditingFlavor
+                                  ? 'Failed to update flavor'
+                                  : 'Failed to create flavor';
                           throw new Error(msg);
                         }
 
-                        fetchFlavors();
+                        refreshFlavors();
 
-                        setShowCreateModal(false);
-                        setNewFlavor(emptyNewFlavorForm());
+                        closeFlavorModal();
                         setCreateFeedback({
                           type: 'success',
-                          message: 'Flavor created',
+                          message: isEditingFlavor
+                            ? 'Flavor updated'
+                            : 'Flavor created',
                         });
                       } catch (err) {
                         setCreateFeedback({
@@ -1043,13 +1185,15 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                           message:
                             err instanceof Error
                               ? err.message
-                              : 'Create failed',
+                              : isEditingFlavor
+                                ? 'Update failed'
+                                : 'Create failed',
                         });
                       }
                     }}
                     className="px-6 py-3 rounded-2xl bg-teal-500 hover:bg-teal-600 text-white transition"
                   >
-                    Create Flavor
+                    {isEditingFlavor ? 'Save Changes' : 'Create Flavor'}
                   </button>
                   </div>
                   <ActionFeedback feedback={createFeedback} />
@@ -1075,12 +1219,43 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
         {/* TABLE */}
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-          <div className="flex items-center justify-end gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2 sm:px-6">
+          <div className="flex flex-col gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2 sm:flex-row sm:items-center sm:justify-end sm:px-6">
+            <ActionFeedback feedback={editRowFeedback} className="mr-auto" />
+            <div className="flex items-center justify-end gap-2">
+            {isBulkEditing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void saveBulkEdit()}
+                  className="rounded-lg bg-teal-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-600"
+                >
+                  Save Table
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelBulkEdit}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={startBulkEdit}
+                disabled={paginatedData.length === 0}
+                className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Pencil size={14} />
+                Edit Table
+              </button>
+            )}
             <TableRefreshButton
               loading={loading}
               onRefresh={refreshFlavors}
               label="Refresh flavors"
             />
+            </div>
           </div>
           {!loading && isFilteringByMonth && (
             <div className="border-b border-teal-100 bg-teal-50 px-6 py-3">
@@ -1235,25 +1410,16 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
                   <th
                     scope="col"
-                    aria-sort={
-                      sortBy === 'price'
-                        ? sortDir === 'asc'
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                    }
+                    className="px-6 py-4 text-center text-sm font-medium text-gray-400"
+                  >
+                    Staff Price
+                  </th>
+
+                  <th
+                    scope="col"
                     className="px-6 py-4 text-center text-sm font-medium text-gray-600"
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleColumnSort('price')}
-                      className="mx-auto inline-flex items-center gap-2 font-semibold text-slate-700 hover:text-slate-900"
-                    >
-                      Price Per Unit{' '}
-                      <span className="text-[0.7rem]">
-                        {sortColumnIcon('price', sortBy, sortDir)}
-                      </span>
-                    </button>
+                    Member Price
                   </th>
 
                   <th
@@ -1282,150 +1448,158 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                   <th className="px-6 py-4 text-center text-sm font-medium text-gray-600">
                     Sales Status
                   </th>
-
-                  <th className="px-6 py-4 text-center text-sm font-medium text-gray-600">
-                    Actions
-                  </th>
                 </tr>
               </thead>
 
               <tbody>
                 {filteredData.length > 0 ? (
-                  paginatedData.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition"
-                    >
-                      <td className="px-6 py-4 font-medium text-gray-800">
-                        {item.name}
-                      </td>
+                  paginatedData.map((item) => {
+                    const draft = bulkEditDrafts[item.id] ?? flavorToForm(item);
 
-                      <td className="px-6 py-4 text-center text-gray-700">
-                        {item.category}
-                      </td>
-
-                      <td className="px-6 py-4 text-center text-gray-700">
-                        {isFilteringByMonth ? item.carryForwarded ?? 0 : '—'}
-                      </td>
-
-                      <td className="px-6 py-4 text-center text-gray-700">
-                        {item.quantity}
-                      </td>
-
-                      <td
-                        className={`px-6 py-4 text-center font-semibold ${
-                          isLowStock(Number(item.stock ?? 0))
-                            ? 'text-red-600'
-                            : 'text-gray-700'
-                        }`}
-                      >
-                        {item.stock ?? 0}
-                      </td>
-
-                      <td className="px-6 py-4 text-center text-gray-700">
-                        ₹{item.price}
-                      </td>
-
-                      <td className="px-6 py-4 text-center font-semibold text-teal-600">
-                        ₹{item.revenue}
-                      </td>
-
-                      <td className="px-6 py-4 text-center">
-                        <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${item.isActive
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-700'
-                            }`}
+                    return (
+                        <tr
+                          key={item.id}
+                          className="border-b border-gray-100 transition hover:bg-gray-50"
                         >
-                          {item.isActive ? 'Active' : 'Disabled'}
-                        </span>
-                      </td>
+                          <td className="px-6 py-4 font-medium text-gray-800">
+                            {isBulkEditing ? (
+                              <input
+                                type="text"
+                                value={draft.name}
+                                onChange={(e) =>
+                                  updateBulkDraft(item.id, { name: e.target.value })
+                                }
+                                className="w-40 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-teal-400"
+                              />
+                            ) : (
+                              item.name
+                            )}
+                          </td>
 
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="flex justify-center gap-2">
-                            {stockAdjustId === item.id ? (
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={stockAdjustQty}
-                                  onChange={(e) =>
-                                    setStockAdjustQty(e.target.value)
-                                  }
-                                  className="w-14 rounded-lg border border-blue-200 px-2 py-1 text-sm outline-none focus:border-blue-400"
-                                  aria-label={`Quantity for ${item.name}`}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => applyStockAdjust(item.id)}
-                                  className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700"
-                                >
-                                  OK
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setStockAdjustId(null)}
-                                  className="rounded-lg border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-                                >
-                                  Cancel
-                                </button>
+                          <td className="px-6 py-4 text-center text-gray-700">
+                            {isBulkEditing ? (
+                              <select
+                                value={draft.category}
+                                onChange={(e) =>
+                                  updateBulkDraft(item.id, { category: e.target.value })
+                                }
+                                className="w-32 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm outline-none focus:border-teal-400"
+                              >
+                                <option value="">Select</option>
+                                {flavorCategoryOptions.map((category) => (
+                                  <option key={category} value={category}>
+                                    {category}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              item.category
+                            )}
+                          </td>
+
+                          <td className="px-6 py-4 text-center text-gray-700">
+                            {isFilteringByMonth ? item.carryForwarded ?? 0 : '—'}
+                          </td>
+
+                          <td className="px-6 py-4 text-center text-gray-700">
+                            {item.quantity}
+                          </td>
+
+                          <td
+                            className={`px-6 py-4 text-center font-semibold ${
+                              isLowStock(Number(item.stock ?? 0))
+                                ? 'text-red-600'
+                                : 'text-gray-700'
+                            }`}
+                          >
+                            {isBulkEditing ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={draft.stock}
+                                onChange={(e) =>
+                                  updateBulkDraft(item.id, {
+                                    stock: Number(e.target.value),
+                                  })
+                                }
+                                className="w-20 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm font-normal outline-none focus:border-teal-400"
+                              />
+                            ) : (
+                              item.stock ?? 0
+                            )}
+                          </td>
+
+                          <td className="px-6 py-4 text-center text-sm text-gray-400">
+                            {isBulkEditing ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={draft.price}
+                                onChange={(e) =>
+                                  updateBulkDraft(item.id, {
+                                    price: Number(e.target.value),
+                                  })
+                                }
+                                className="w-24 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm text-gray-700 outline-none focus:border-teal-400"
+                              />
+                            ) : (
+                              <>₹{formatRupeeAmount(item.price)}</>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-4 text-center font-semibold text-teal-700">
+                            ₹{formatRupeeAmount(
+                              getMemberPrice(isBulkEditing ? draft.price : item.price),
+                            )}
+                          </td>
+
+                          <td className="px-6 py-4 text-center font-semibold text-teal-600">
+                            ₹{formatRupeeAmount(item.revenue)}
+                          </td>
+
+                          <td className="px-6 py-4 text-center">
+                            {isBulkEditing ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <label className="flex items-center gap-2 text-xs text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={draft.isActive}
+                                    onChange={(e) =>
+                                      updateBulkDraft(item.id, {
+                                        isActive: e.target.checked,
+                                      })
+                                    }
+                                  />
+                                  Active
+                                </label>
+                                <label className="flex items-center gap-2 text-xs text-gray-500">
+                                  <input
+                                    type="checkbox"
+                                    checked={draft.isSeasonal}
+                                    onChange={(e) =>
+                                      updateBulkDraft(item.id, {
+                                        isSeasonal: e.target.checked,
+                                      })
+                                    }
+                                  />
+                                  Seasonal
+                                </label>
                               </div>
                             ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setStockAdjustId(item.id);
-                                  setStockAdjustQty('1');
-                                  setStockRowFeedback(null);
-                                  setStockRowFeedbackId(null);
-                                }}
-                                className="flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1 text-sm text-blue-600 hover:bg-blue-200"
-                              >
-                                <Plus size={16} />
-                                Add
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                toggleFlavorActive(
-                                  item.id,
+                              <span
+                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
                                   item.isActive
-                                )
-                              }
-                              className={`rounded-lg px-3 py-1 text-sm transition ${item.isActive
-                                ? 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-gray-100 text-gray-700'
                                 }`}
-                              title={
-                                item.isActive
-                                  ? 'Disable flavor'
-                                  : 'Enable flavor'
-                              }
-                            >
-                              {item.isActive ? (
-                                <Eye size={16} />
-                              ) : (
-                                <EyeOff size={16} />
-                              )}
-                            </button>
-                          </div>
-                          <ActionFeedback
-                            feedback={
-                              stockRowFeedbackId === item.id
-                                ? stockRowFeedback
-                                : statusRowFeedbackId === item.id
-                                  ? statusRowFeedback
-                                  : null
-                            }
-                            className="text-center"
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                              >
+                                {item.isActive ? 'Active' : 'Disabled'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td

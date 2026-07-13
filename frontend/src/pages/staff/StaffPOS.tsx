@@ -4,6 +4,7 @@ import StaffHeader from '../../components/Layout/StaffHeader';
 import api from '../../services/api';
 import axios from 'axios';
 import ActionFeedback from '../../components/ActionFeedback';
+import StatusToast from '../../components/StatusToast';
 import StaffPromoCarousel from '../../components/staff/StaffPromoCarousel';
 import PhonePeQrModal from '../../components/payments/PhonePeQrModal';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
@@ -411,6 +412,10 @@ export default function StaffPOS() {
           expiresAt: paymentResponse.data.expiresAt,
           mockMode: Boolean(paymentResponse.data.mockMode),
         });
+        setCheckoutFeedback({
+          type: 'pending',
+          message: 'Payment pending — waiting for customer scan',
+        });
         return;
       } catch (err) {
         console.error(err);
@@ -470,6 +475,10 @@ export default function StaffPOS() {
         expiresAt: paymentResponse.data.expiresAt,
         mockMode: Boolean(paymentResponse.data.mockMode),
       });
+      setCheckoutFeedback({
+        type: 'pending',
+        message: 'Payment pending — waiting for customer scan',
+      });
     } catch (err) {
       console.error(err);
       let message = 'Order failed';
@@ -501,6 +510,20 @@ export default function StaffPOS() {
     await loadProducts(false);
   };
 
+  const handlePaymentFailed = (message: string) => {
+    setCheckoutFeedback({
+      type: 'error',
+      message: message || 'Payment failed',
+    });
+  };
+
+  const handlePaymentPending = (message: string) => {
+    setCheckoutFeedback({
+      type: 'pending',
+      message: message || 'Payment pending',
+    });
+  };
+
   const handlePaymentClose = () => {
     setPaymentSession(null);
   };
@@ -516,6 +539,7 @@ export default function StaffPOS() {
 
   return (
     <div className="min-h-screen bg-[#f6f7f9]">
+      <StatusToast toast={checkoutFeedback} />
       <StaffHeader />
 
       <main className="p-4 lg:p-5">
@@ -818,10 +842,6 @@ export default function StaffPOS() {
                           ? 'Complete bulk order'
                           : 'Complete order'}
                   </button>
-                  <ActionFeedback
-                    feedback={checkoutFeedback}
-                    className="text-center"
-                  />
                 </div>
               </div>
             </div>
@@ -837,6 +857,8 @@ export default function StaffPOS() {
         expiresAt={paymentSession?.expiresAt}
         mockMode={paymentSession?.mockMode}
         onSuccess={handlePaymentSuccess}
+        onFailed={handlePaymentFailed}
+        onPending={handlePaymentPending}
         onClose={handlePaymentClose}
       />
     </div>

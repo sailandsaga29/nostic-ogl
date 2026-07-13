@@ -1,5 +1,5 @@
 export type ActionFeedbackState = {
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'pending';
   message: string;
 } | null;
 
@@ -12,7 +12,11 @@ export default function ActionFeedback({ feedback, className = '' }: Props) {
   if (!feedback) return null;
 
   const colorClass =
-    feedback.type === 'success' ? 'text-green-600' : 'text-red-600';
+    feedback.type === 'success'
+      ? 'text-green-600'
+      : feedback.type === 'pending'
+        ? 'text-orange-600'
+        : 'text-red-600';
 
   return (
     <p

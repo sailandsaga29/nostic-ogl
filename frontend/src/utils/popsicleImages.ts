@@ -31,25 +31,38 @@ const CHIKOO_IMAGE =
 /** One image per flavor name only — scoped by category below. */
 const EXACT_POPSICLE_IMAGES: Record<string, string> = {
   'honey dates': honeyDatesImg,
+  'honey date': honeyDatesImg,
   'jack fruit': jackfruitImg,
+  'jackfruit': jackfruitImg,
   'blue berry': blueberryImg,
+  'blueberry': blueberryImg,
   'avacado': avocadoImg,
   'avocado': avocadoImg,
   'chicko': CHIKOO_IMAGE,
   'chikoo': CHIKOO_IMAGE,
   'watermelon': watermelonImg,
+  'water melon': watermelonImg,
   'snickers': snickersImg,
   'mango': mangoImg,
   'kitkat': kitkatImg,
+  'kit kat': kitkatImg,
   'strawberry': strawberryImg,
   'tinder coco': coconutImg,
+  'coconut': coconutImg,
+  'coco': coconutImg,
   'lotus': lotusImg,
+  'lotus biscof': lotusImg,
+  'lotus biscoff': lotusImg,
   'oreo': oreoImg,
   'chilli guava': guavaImg,
+  'chili guava': guavaImg,
+  'guava': guavaImg,
   'dragon fruit': dragonfruitImg,
   'dragonfruit': dragonfruitImg,
   'grapes': grapesImg,
+  'grape': grapesImg,
   'chocolate': chocolateImg,
+  'choclate': chocolateImg,
   'cithapal': cithapalImg,
   'sithapal': cithapalImg,
   'sitaphal': cithapalImg,
@@ -59,7 +72,9 @@ const EXACT_SIP_UPS_IMAGES: Record<string, string> = {
   'strawberry': sipUpsStrawberryImg,
   'mango': sipUpsMangoImg,
   'chocolate': sipUpsChocolateImg,
+  'choclate': sipUpsChocolateImg,
   'jack fruit': sipUpsJackfruitImg,
+  'jackfruit': sipUpsJackfruitImg,
   'pineapple': sipUpsPineappleImg,
   'pine apple': sipUpsPineappleImg,
   'orange': sipUpsOrangeImg,
@@ -108,14 +123,32 @@ function isRemotePlaceholder(url?: string) {
   );
 }
 
-export function matchPopsicleImage(name: string): string | undefined {
+/** Exact name first, then longest key contained in the flavor name. */
+function matchImageByName(
+  name: string,
+  map: Record<string, string>,
+): string | undefined {
   const normalized = normalizeFlavorName(name);
-  return EXACT_POPSICLE_IMAGES[normalized];
+  if (!normalized) return undefined;
+
+  if (map[normalized]) return map[normalized];
+
+  const keys = Object.keys(map).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (normalized.includes(key)) {
+      return map[key];
+    }
+  }
+
+  return undefined;
+}
+
+export function matchPopsicleImage(name: string): string | undefined {
+  return matchImageByName(name, EXACT_POPSICLE_IMAGES);
 }
 
 export function matchSipUpsImage(name: string): string | undefined {
-  const normalized = normalizeFlavorName(name);
-  return EXACT_SIP_UPS_IMAGES[normalized];
+  return matchImageByName(name, EXACT_SIP_UPS_IMAGES);
 }
 
 export function resolveStaffProductImage(
@@ -123,20 +156,17 @@ export function resolveStaffProductImage(
   category?: string,
   remoteImage?: string,
 ) {
-  const normalized = normalizeFlavorName(name);
+  const trimmedRemote = remoteImage?.trim();
+  const hasRemote =
+    Boolean(trimmedRemote) && !isRemotePlaceholder(trimmedRemote);
 
   if (isPopsicleProduct(name, category)) {
-    return EXACT_POPSICLE_IMAGES[normalized] ?? '';
+    return matchPopsicleImage(name) ?? (hasRemote ? trimmedRemote! : '');
   }
 
   if (isSipUpsProduct(name, category)) {
-    return EXACT_SIP_UPS_IMAGES[normalized] ?? '';
+    return matchSipUpsImage(name) ?? (hasRemote ? trimmedRemote! : '');
   }
 
-  const trimmedRemote = remoteImage?.trim();
-  if (trimmedRemote && !isRemotePlaceholder(trimmedRemote)) {
-    return trimmedRemote;
-  }
-
-  return '';
+  return hasRemote ? trimmedRemote! : '';
 }

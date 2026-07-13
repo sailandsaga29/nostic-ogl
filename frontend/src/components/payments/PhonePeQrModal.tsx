@@ -10,6 +10,8 @@ type PhonePeQrModalProps = {
   expiresAt?: string;
   mockMode?: boolean;
   onSuccess: () => void;
+  onFailed?: (message: string) => void;
+  onPending?: (message: string) => void;
   onClose: () => void;
 };
 
@@ -21,6 +23,8 @@ export default function PhonePeQrModal({
   expiresAt,
   mockMode = false,
   onSuccess,
+  onFailed,
+  onPending,
   onClose,
 }: PhonePeQrModalProps) {
   const [qrImage, setQrImage] = useState('');
@@ -36,11 +40,13 @@ export default function PhonePeQrModal({
   useEffect(() => {
     if (!open) return;
     setStatus('PENDING');
-    setMessage(
-      mockMode
-        ? 'Test mode: use the buttons below to simulate payment.'
-        : 'Waiting for customer to scan and pay...',
-    );
+    const pendingMessage = mockMode
+      ? 'Test mode: use the buttons below to simulate payment.'
+      : 'Waiting for customer to scan and pay...';
+    setMessage(pendingMessage);
+    onPending?.(pendingMessage);
+    // Intentionally omit onPending from deps to avoid re-firing when parent re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mockMode, merchantTransactionId]);
 
   useEffect(() => {
@@ -96,12 +102,13 @@ export default function PhonePeQrModal({
 
         if (nextStatus === 'FAILED' || nextStatus === 'EXPIRED') {
           setStatus(nextStatus);
-          setMessage(
+          const failMessage =
             response.data.message ||
-              (nextStatus === 'EXPIRED'
-                ? 'QR expired. Generate a new payment.'
-                : 'Payment failed. Try again or use cash.'),
-          );
+            (nextStatus === 'EXPIRED'
+              ? 'QR expired. Generate a new payment.'
+              : 'Payment failed. Try again or use cash.');
+          setMessage(failMessage);
+          onFailed?.(failMessage);
         }
       } catch {
         if (!cancelled) {
@@ -116,7 +123,7 @@ export default function PhonePeQrModal({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [open, merchantTransactionId, status, onSuccess]);
+  }, [open, merchantTransactionId, status, onSuccess, onFailed]);
 
   const simulatePayment = async (outcome: 'success' | 'failed') => {
     try {
@@ -135,14 +142,17 @@ export default function PhonePeQrModal({
       }
 
       setStatus(nextStatus === 'EXPIRED' ? 'EXPIRED' : 'FAILED');
-      setMessage(
+      const failMessage =
         response.data.message ||
-          (outcome === 'failed'
-            ? 'Test payment failed.'
-            : 'Unable to simulate payment.'),
-      );
+        (outcome === 'failed'
+          ? 'Test payment failed.'
+          : 'Unable to simulate payment.');
+      setMessage(failMessage);
+      onFailed?.(failMessage);
     } catch {
-      setMessage('Failed to simulate test payment.');
+      const failMessage = 'Failed to simulate test payment.';
+      setMessage(failMessage);
+      onFailed?.(failMessage);
     } finally {
       setSimulating(false);
     }
