@@ -130,12 +130,12 @@ export class FlavorsController {
     return this.flavorsService.bulkUpdate(body.items);
   }
 
-  @Get(':id(\\d+)')
+  @Get(':id')
   findOne(@Param('id') id: string) {
     return this.flavorsService.findOne(id);
   }
 
-  @Put(':id(\\d+)')
+  @Put(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiBody({
     description: 'Update flavor payload (partial allowed)',
@@ -151,7 +151,7 @@ export class FlavorsController {
     return this.flavorsService.update(id, body);
   }
 
-  @Patch(':id(\\d+)/stock')
+  @Patch(':id/stock')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiBody({
     description: 'Adjust stock change (positive to add, negative to remove)',
@@ -178,7 +178,7 @@ export class FlavorsController {
     throw new BadRequestException('Missing stock change');
   }
 
-  @Delete(':id(\\d+)')
+  @Delete(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   remove(@Param('id') id: string) {
     return this.flavorsService.remove(id);
