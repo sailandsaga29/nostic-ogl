@@ -657,7 +657,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
     try {
       setEditRowFeedback(null);
       const response = await fetch(`${API_URL}/bulk-update`, {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
