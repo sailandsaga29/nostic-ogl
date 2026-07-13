@@ -797,11 +797,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   return (
     <div className="bg-[#fafafa]">
 
-      {createFeedback && !showCreateModal ? (
-        <div className="mx-auto max-w-7xl px-4 pt-3">
-          <ActionFeedback feedback={createFeedback} />
-        </div>
-      ) : null}
+      <ActionFeedback feedback={createFeedback && !showCreateModal ? createFeedback : null} />
 
       {/* HERO — compact */}
       {/* <section className="mx-4 mt-4 overflow-hidden rounded-2xl bg-gradient-to-r from-[#8bd8bf] to-[#33c3b3] sm:mx-6 sm:mt-5">
@@ -1219,9 +1215,8 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
         {/* TABLE */}
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-          <div className="flex flex-col gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2 sm:flex-row sm:items-center sm:justify-end sm:px-6">
-            <ActionFeedback feedback={editRowFeedback} className="mr-auto" />
-            <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2 sm:px-6">
+            <ActionFeedback feedback={editRowFeedback} />
             {isBulkEditing ? (
               <>
                 <button
@@ -1255,7 +1250,6 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
               onRefresh={refreshFlavors}
               label="Refresh flavors"
             />
-            </div>
           </div>
           {!loading && isFilteringByMonth && (
             <div className="border-b border-teal-100 bg-teal-50 px-6 py-3">

@@ -731,11 +731,7 @@ export default function StaffOrderOptions({
 
           {/* Main — dense order table */}
           <section className="min-w-0 rounded-2xl bg-white shadow-sm ring-1 ring-gray-100">
-            {isAdminView && pendingActionFeedback ? (
-              <div className="border-b border-gray-100 px-3 py-2 sm:px-4">
-                <ActionFeedback feedback={pendingActionFeedback} />
-              </div>
-            ) : null}
+            <ActionFeedback feedback={isAdminView ? pendingActionFeedback : null} />
             <div className="border-b border-gray-100 p-3 sm:p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <input

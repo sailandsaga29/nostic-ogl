@@ -4,7 +4,6 @@ import StaffHeader from '../../components/Layout/StaffHeader';
 import api from '../../services/api';
 import axios from 'axios';
 import ActionFeedback from '../../components/ActionFeedback';
-import StatusToast from '../../components/StatusToast';
 import StaffPromoCarousel from '../../components/staff/StaffPromoCarousel';
 import PhonePeQrModal from '../../components/payments/PhonePeQrModal';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
@@ -539,7 +538,7 @@ export default function StaffPOS() {
 
   return (
     <div className="min-h-screen bg-[#f6f7f9]">
-      <StatusToast toast={checkoutFeedback} />
+      <ActionFeedback feedback={checkoutFeedback} />
       <StaffHeader />
 
       <main className="p-4 lg:p-5">
