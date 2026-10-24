@@ -983,14 +983,19 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
         {/* CREATE MODAL */}
         {showCreateModal ? (
-          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden">
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-2 sm:items-center sm:p-4">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="flavor-modal-title"
+              className="my-2 flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:my-4 sm:max-h-[calc(100dvh-4rem)] sm:rounded-3xl"
+            >
               {/* HEADER */}
-              <div className="bg-gradient-to-r from-[#8bd8bf] to-[#33c3b3] px-8 py-6">
-                <h2 className="text-3xl font-bold text-white">
+              <div className="shrink-0 bg-gradient-to-r from-[#8bd8bf] to-[#33c3b3] px-5 py-4 sm:px-8 sm:py-6">
+                <h2 id="flavor-modal-title" className="text-2xl font-bold text-white sm:text-3xl">
                   {isEditingFlavor ? 'Edit Flavor' : 'Add New Flavor'}
                 </h2>
-                <p className="mt-2 text-white/90">
+                <p className="mt-1 text-sm text-white/90 sm:mt-2 sm:text-base">
                   {isEditingFlavor
                     ? 'Update this flavor entry'
                     : 'Create a new handcrafted flavor'}
@@ -998,8 +1003,8 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
               </div>
 
               {/* BODY */}
-              <div className="p-8 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:space-y-6 sm:p-6 md:p-8">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
                   <div>
                     <label className="mb-2 block text-sm text-gray-500">
                       Flavor Name
@@ -1081,7 +1086,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                     />
                   </div>
 
-                  <div className="md:col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="mb-2 block text-sm text-gray-500">
                       Image URL <span className="text-gray-400">(optional)</span>
                     </label>
@@ -1102,8 +1107,8 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                   <textarea
                     value={newFlavor.description}
                     onChange={(e) => setNewFlavor({ ...newFlavor, description: e.target.value })}
-                    rows={4}
-                    className="w-full border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-teal-400 resize-none"
+                    rows={3}
+                    className="w-full resize-none rounded-2xl border border-gray-200 px-4 py-3 outline-none focus:border-teal-400"
                   />
                 </div>
 
@@ -1130,10 +1135,10 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                 </div>
 
                 <div className="flex flex-col items-end gap-2 pt-4">
-                  <div className="flex justify-end gap-4">
+                  <div className="flex w-full justify-end gap-2 sm:gap-4">
                   <button
                     onClick={closeFlavorModal}
-                    className="px-6 py-3 rounded-2xl border border-gray-200 hover:bg-gray-100 transition"
+                    className="rounded-2xl border border-gray-200 px-4 py-2.5 transition hover:bg-gray-100 sm:px-6 sm:py-3"
                   >
                     Cancel
                   </button>
@@ -1234,7 +1239,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                         });
                       }
                     }}
-                    className="px-6 py-3 rounded-2xl bg-teal-500 hover:bg-teal-600 text-white transition"
+                    className="rounded-2xl bg-teal-500 px-4 py-2.5 text-white transition hover:bg-teal-600 sm:px-6 sm:py-3"
                   >
                     {isEditingFlavor ? 'Save Changes' : 'Create Flavor'}
                   </button>

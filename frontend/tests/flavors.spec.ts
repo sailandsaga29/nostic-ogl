@@ -454,6 +454,35 @@ test('adds a flavor with valid details and reflects its category in the table', 
   await expect(flavorRow(page, 'Mint Test')).toBeVisible();
 });
 
+test('keeps the add flavor dialog usable on phone-sized and desktop screens', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 480 });
+  await page.getByRole('button', { name: '+ Add Flavor' }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  const mobileBounds = await dialog.boundingBox();
+  expect(mobileBounds).not.toBeNull();
+  expect(mobileBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(mobileBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(mobileBounds!.x + mobileBounds!.width).toBeLessThanOrEqual(320);
+  expect(mobileBounds!.y + mobileBounds!.height).toBeLessThanOrEqual(480);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).toBe(true);
+
+  await dialog.getByRole('button', { name: 'Create Flavor' }).scrollIntoViewIfNeeded();
+  await expect(dialog.getByRole('button', { name: 'Create Flavor' })).toBeVisible();
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const desktopBounds = await dialog.boundingBox();
+  expect(desktopBounds).not.toBeNull();
+  expect(desktopBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(desktopBounds!.x + desktopBounds!.width).toBeLessThanOrEqual(1280);
+  expect(desktopBounds!.y + desktopBounds!.height).toBeLessThanOrEqual(900);
+});
+
 test('keeps the add form open and reports an API error when creation fails', async ({
   page,
 }) => {
