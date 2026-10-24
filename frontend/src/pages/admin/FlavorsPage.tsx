@@ -250,11 +250,16 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   const categories = useMemo(
     () => [
       'All',
-      ...[...BASE_FLAVOR_CATEGORIES].sort((a, b) =>
-        a.localeCompare(b, 'en', { sensitivity: 'base' }),
-      ),
+      ...Array.from(
+        new Set([
+          ...BASE_FLAVOR_CATEGORIES,
+          ...data
+            .map((item) => item.category?.trim())
+            .filter((category): category is string => Boolean(category)),
+        ]),
+      ).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' })),
     ],
-    [],
+    [data],
   );
 
   const flavorCategoryOptions = useMemo(() => {

@@ -50,8 +50,23 @@ export class FlavorsService {
   }
 
   async update(id: number | string, data: Partial<Flavor>) {
-    await this.findOne(id);
-    await this.flavorsRepo.update(parseId(id), data);
+    const parsedId = parseId(id);
+    const current = await this.findOne(parsedId);
+    const { stock, ...fields } = data;
+
+    if (
+      Object.values(fields).some((value) => value !== undefined)
+    ) {
+      await this.flavorsRepo.update(parsedId, fields);
+    }
+
+    if (typeof stock === 'number') {
+      const change = stock - Number(current.stock ?? 0);
+      if (change !== 0) {
+        return this.adjustStock(parsedId, change);
+      }
+    }
+
     return this.findOne(id);
   }
 
@@ -328,19 +343,20 @@ export class FlavorsService {
 
     const flavor = await this.findOne(parsedId);
 
-    if (Number(change) > 0) {
-      const now = new Date();
-      const month = now.getMonth() + 1;
-      const year = now.getFullYear();
-      const monthly = await this.ensureMonthlyRecord(flavor, year, month);
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    const monthly = await this.ensureMonthlyRecord(flavor, year, month);
 
-      monthly.quantity = Number(monthly.quantity ?? 0) + Number(change);
-      const memberRate = getMemberPrice(Number(flavor.price ?? 0));
-      monthly.rate = memberRate;
-      monthly.cost = monthly.quantity * memberRate;
-      monthly.category = flavor.category;
-      await this.flavorMonthlyRepo.save(monthly);
-    }
+    monthly.quantity = Math.max(
+      0,
+      Number(monthly.quantity ?? 0) + Number(change),
+    );
+    const memberRate = getMemberPrice(Number(flavor.price ?? 0));
+    monthly.rate = memberRate;
+    monthly.cost = monthly.quantity * memberRate;
+    monthly.category = flavor.category;
+    await this.flavorMonthlyRepo.save(monthly);
 
     return flavor;
   }

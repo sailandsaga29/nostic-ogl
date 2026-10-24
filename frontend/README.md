@@ -43,6 +43,21 @@ export default defineConfig([
 ])
 ```
 
+## Flavor regression tests
+
+The automated flavor-tab suite exercises table rendering, category and month
+filters, sorting, pagination, bulk editing and validation, and flavor creation.
+API responses are mocked, so these tests do not write to a real database.
+
+Install frontend dependencies, install Playwright's Chromium browser once, then
+run the suite:
+
+```sh
+npm install
+npx playwright install chromium
+npm run test:flavors
+```
+
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
 ```js
