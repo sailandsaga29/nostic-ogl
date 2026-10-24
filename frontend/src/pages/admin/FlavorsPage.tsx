@@ -344,11 +344,29 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
     }
   };
 
-  const fetchFlavors = async () => {
+  const mapFlavorListResponse = (result: unknown) =>
+    sortByName(
+      (Array.isArray(result) ? result : []).map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        description: item.description,
+        carryForwarded: 0,
+        quantity: item.stock,
+        stock: item.stock,
+        minStock: item.minStock,
+        price: item.price,
+        revenue:
+          Number(item.stock ?? 0) * getMemberPrice(Number(item.price ?? 0)),
+        image: item.image,
+        isActive: item.isActive,
+        isSeasonal: item.isSeasonal,
+      })),
+    );
+
+  const fetchFlavors = async (options?: { forceApply?: boolean }) => {
     try {
       setLoading(true);
-      // indicate this is a full fetch (not month-filtered)
-      // do not immediately clear `isFilteringByMonth` here; we'll check before applying data
 
       const response = await fetch(API_URL, {
         headers: {
@@ -363,32 +381,17 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
       }
 
       const result = await response.json();
+      const mapped = mapFlavorListResponse(result);
 
-      const mapped = result.map(
-        (item: any) => ({
-          id: item.id,
-          name: item.name,
-          category: item.category,
-          description: item.description,
-          carryForwarded: 0,
-          quantity: item.stock,
-          stock: item.stock,
-          minStock: item.minStock,
-          price: item.price,
-          revenue:
-            Number(item.stock ?? 0) * getMemberPrice(Number(item.price ?? 0)),
-          image: item.image,
-          isActive: item.isActive,
-          isSeasonal: item.isSeasonal,
-        })
-      );
-
-      // If a month-filtered request is currently active, avoid overwriting its results
-      if (!isFilteringByMonth) {
-        setData(sortByName(mapped));
+      // Avoid stale full-list fetch overwriting month view unless this is an explicit refresh.
+      if (options?.forceApply || !isFilteringByMonth) {
+        setData(mapped);
       }
+
+      return mapped;
     } catch (err) {
       setError('Failed to fetch flavors');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -416,10 +419,13 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
       const result = await response.json();
 
-      setData(sortByName(Array.isArray(result) ? result : []));
+      const mapped = sortByName(Array.isArray(result) ? result : []);
+      setData(mapped);
+      return mapped;
     } catch (err) {
       setError('Failed to fetch monthly flavors');
       setData([]);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -487,18 +493,19 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   =========================================
   */
 
-  const refreshFlavors = () => {
+  const refreshFlavors = async () => {
     const monthNum = getMonthNumber(selectedMonth);
 
     if (
       isFilteringByMonth &&
       selectedMonth &&
-      selectedYear > 0
+      selectedYear > 0 &&
+      !isFutureMonth(selectedYear, monthNum)
     ) {
-      fetchFlavorsForMonthYear(selectedYear, monthNum);
-    } else {
-      fetchFlavors();
+      return fetchFlavorsForMonthYear(selectedYear, monthNum);
     }
+
+    return fetchFlavors({ forceApply: true });
   };
 
   const closeFlavorModal = () => {
@@ -656,6 +663,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
     try {
       setEditRowFeedback(null);
+      setLoading(true);
       const response = await fetch(`${API_URL}/bulk-update`, {
         method: 'POST',
         headers: {
@@ -688,18 +696,20 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
         throw new Error(msg);
       }
 
+      await refreshFlavors();
       cancelBulkEdit();
       setCreateFeedback({
         type: 'success',
         message: 'Flavor list updated',
       });
-      refreshFlavors();
     } catch (err) {
       setEditRowFeedback({
         type: 'error',
         message: err instanceof Error ? err.message : 'Bulk update failed',
       });
       setEditRowFeedbackId(items[0]?.id ?? null);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -756,18 +766,50 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
     setEditRowFeedbackId(null);
   };
 
+  useEffect(() => {
+    if (!isBulkEditing) return;
+    cancelBulkEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- exit bulk edit when table context changes
+  }, [selectedMonth, selectedYear, selectedCategory]);
+
   const updateBulkDraft = (
     id: number,
     patch: Partial<FlavorForm>,
   ) => {
-    setBulkEditDrafts((prev) => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        ...patch,
-      },
-    }));
+    setBulkEditDrafts((prev) => {
+      const row = data.find((item) => item.id === id);
+      const base = prev[id] ?? (row ? flavorToForm(row) : emptyNewFlavorForm());
+
+      return {
+        ...prev,
+        [id]: {
+          ...base,
+          ...patch,
+        },
+      };
+    });
   };
+
+  useEffect(() => {
+    if (!isBulkEditing) return;
+
+    const start = (page - 1) * FLAVORS_PER_PAGE;
+    const pageItems = filteredData.slice(start, start + FLAVORS_PER_PAGE);
+
+    setBulkEditDrafts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      for (const item of pageItems) {
+        if (!next[item.id]) {
+          next[item.id] = flavorToForm(item);
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [isBulkEditing, page, filteredData]);
 
   const pageStart =
     filteredData.length === 0 ? 0 : (page - 1) * FLAVORS_PER_PAGE + 1;
