@@ -4,7 +4,7 @@ import ActionFeedback from '../../components/ActionFeedback';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Pencil } from 'lucide-react';
+import { Pencil, Search } from 'lucide-react';
 import TableRefreshButton from '../../components/TableRefreshButton';
 import { API_BASE_URL } from '../../config/env';
 import { sortByName } from '../../utils/sortByName';
@@ -148,6 +148,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   const [sortBy, setSortBy] = useState<FlavorListSortKey>('name');
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const toggleColumnSort = (key: FlavorListSortKey) => {
     if (sortBy === key) {
@@ -725,19 +726,27 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   */
 
   const filteredData = useMemo(() => {
-    const filtered =
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+    const filteredByCategory =
       selectedCategory === 'All'
         ? [...data]
         : data.filter((x) =>
             categoriesMatch(x.category ?? '', selectedCategory),
           );
+    const filtered = normalizedQuery
+      ? filteredByCategory.filter(
+          (item) =>
+            item.name.toLocaleLowerCase().includes(normalizedQuery) ||
+            (item.category ?? '').toLocaleLowerCase().includes(normalizedQuery),
+        )
+      : filteredByCategory;
 
     return sortFlavorList(filtered, sortBy, sortDir);
-  }, [selectedCategory, data, sortBy, sortDir]);
+  }, [selectedCategory, searchQuery, data, sortBy, sortDir]);
 
   useEffect(() => {
     setPage(1);
-  }, [selectedCategory, selectedMonth, selectedYear, sortBy, sortDir]);
+  }, [selectedCategory, searchQuery, selectedMonth, selectedYear, sortBy, sortDir]);
 
   const totalPages = Math.max(
     1,
@@ -833,10 +842,15 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
     `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
   const showNoDataBanner =
-    !loading && isFilteringByMonth && filteredData.length === 0;
+    !loading &&
+    isFilteringByMonth &&
+    filteredData.length === 0 &&
+    !searchQuery.trim();
 
   const emptyTableMessage = loading
     ? 'Loading flavors...'
+    : searchQuery.trim()
+      ? `No flavors match "${searchQuery.trim()}".`
     : selectedIsFutureMonth
       ? `No data found for ${selectedMonth} ${selectedYear} (future month)`
       : `No data found for ${selectedMonth} ${selectedYear}`;
@@ -1267,41 +1281,58 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
         {/* TABLE */}
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-          <div className="flex items-center justify-end gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2 sm:px-6">
-            <ActionFeedback feedback={editRowFeedback} />
-            {isBulkEditing ? (
-              <>
+          <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2 sm:flex-nowrap sm:px-6">
+            <div className="relative min-w-[10rem] flex-1">
+              <Search
+                size={16}
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search flavors..."
+                aria-label="Search flavors"
+                className="w-full rounded-lg border border-gray-200 bg-white py-1.5 pl-9 pr-3 text-sm text-gray-800 outline-none placeholder:text-gray-400 focus:border-teal-400"
+              />
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <ActionFeedback feedback={editRowFeedback} />
+              {isBulkEditing ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void saveBulkEdit()}
+                    className="rounded-lg bg-teal-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-600"
+                  >
+                    Save Table
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelBulkEdit}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => void saveBulkEdit()}
-                  className="rounded-lg bg-teal-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-600"
+                  onClick={startBulkEdit}
+                  disabled={paginatedData.length === 0}
+                  className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  Save Table
+                  <Pencil size={14} />
+                  Edit Table
                 </button>
-                <button
-                  type="button"
-                  onClick={cancelBulkEdit}
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={startBulkEdit}
-                disabled={paginatedData.length === 0}
-                className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Pencil size={14} />
-                Edit Table
-              </button>
-            )}
-            <TableRefreshButton
-              loading={loading}
-              onRefresh={refreshFlavors}
-              label="Refresh flavors"
-            />
+              )}
+              <TableRefreshButton
+                loading={loading}
+                onRefresh={refreshFlavors}
+                label="Refresh flavors"
+              />
+            </div>
           </div>
           {!loading && isFilteringByMonth && (
             <div className="border-b border-teal-100 bg-teal-50 px-6 py-3">

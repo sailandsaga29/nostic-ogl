@@ -204,6 +204,35 @@ test('filters known and database-provided categories and restores All', async ({
   await expect(flavorRow(page, 'Almond Joy')).toBeVisible();
 });
 
+test('searches flavors by name and category with or without table editing', async ({
+  page,
+}) => {
+  const search = page.getByRole('searchbox', { name: 'Search flavors' });
+
+  await search.fill('lemon');
+  await expect(page.getByRole('row')).toHaveCount(2);
+  await expect(flavorRow(page, 'Lemon Zest')).toBeVisible();
+  await expect(flavorRow(page, 'Almond Joy')).toHaveCount(0);
+
+  await search.fill('100 ml');
+  await expect(page.getByRole('row')).toHaveCount(3);
+  await expect(flavorRow(page, 'Dragonfruit')).toBeVisible();
+  await expect(flavorRow(page, 'Lemon Zest')).toBeVisible();
+
+  await search.fill('no such flavor');
+  await expect(page.getByRole('cell', { name: 'No flavors match "no such flavor".' })).toBeVisible();
+  await expect(page.getByText('No data found for October 2026')).toHaveCount(0);
+
+  await search.fill('');
+  await page.getByRole('button', { name: 'Edit Table' }).click();
+  await search.fill('honey');
+  const editingRows = page.locator('tbody tr');
+  await expect(editingRows).toHaveCount(1);
+  await expect(editingRows.first().locator('input[type="text"]')).toHaveValue(
+    'Honey Dates',
+  );
+});
+
 test('sorts table columns in ascending and descending order', async ({ page }) => {
   const nameHeader = page.getByRole('columnheader', { name: /Flavour/ });
   await expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
