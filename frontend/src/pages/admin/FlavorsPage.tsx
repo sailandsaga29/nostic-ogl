@@ -4,7 +4,7 @@ import ActionFeedback from '../../components/ActionFeedback';
 import { useTimedFeedback } from '../../hooks/useTimedFeedback';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Pencil, Search } from 'lucide-react';
+import { Download, Pencil, Search, Upload } from 'lucide-react';
 import TableRefreshButton from '../../components/TableRefreshButton';
 import { API_BASE_URL } from '../../config/env';
 import { sortByName } from '../../utils/sortByName';
@@ -18,6 +18,10 @@ import {
 import type { AdminPageProps } from '../../types/adminPage';
 import { getMemberPrice } from '../../utils/flavorPricing';
 import { formatRupeeAmount } from '../../utils/partyOrderCalc';
+import {
+  parseFlavorStockWorkbook,
+  resolveFlavorStockRows,
+} from '../../utils/flavorStockExcel';
 
 const MONTH_NAMES = [
   'January',
@@ -181,6 +185,10 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   const [bulkStockEditRequested, setBulkStockEditRequested] = useState<
     Record<number, boolean>
   >({});
+  const [isImportingStock, setIsImportingStock] = useState(false);
+  const [isDownloadingStock, setIsDownloadingStock] = useState(false);
+  const [excelImportErrors, setExcelImportErrors] = useState<string[]>([]);
+  const excelFileInputRef = useRef<HTMLInputElement>(null);
 
   const [availableYears, setAvailableYears] =
     useState<number[]>([]);
@@ -721,6 +729,152 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
       setEditRowFeedbackId(items[0]?.id ?? null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const importStockWorkbook = async (file: File) => {
+    setExcelImportErrors([]);
+    setCreateFeedback(null);
+    setIsImportingStock(true);
+
+    try {
+      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+        throw new Error('Please upload an .xlsx Excel file.');
+      }
+
+      const parsed = await parseFlavorStockWorkbook(await file.arrayBuffer());
+      if (parsed.errors.length > 0) {
+        setExcelImportErrors(parsed.errors);
+        return;
+      }
+
+      const flavors = await fetchFlavors();
+      if (!flavors) {
+        throw new Error('Could not load existing flavors to validate the upload.');
+      }
+
+      const resolved = resolveFlavorStockRows(parsed.rows, flavors);
+      if (resolved.errors.length > 0) {
+        setExcelImportErrors(resolved.errors);
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/bulk-update`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token,
+        },
+        body: JSON.stringify({ items: resolved.updates }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => null);
+        const message =
+          typeof errBody?.message === 'string'
+            ? errBody.message
+            : Array.isArray(errBody?.message)
+              ? errBody.message.join(', ')
+              : 'Failed to update stock from Excel';
+        throw new Error(message);
+      }
+
+      await refreshFlavors();
+      setCreateFeedback({
+        type: 'success',
+        message: `Stock and staff prices updated for ${resolved.updates.length} flavor${resolved.updates.length === 1 ? '' : 's'}.`,
+      });
+    } catch (err) {
+      setExcelImportErrors([
+        err instanceof Error ? err.message : 'Excel upload failed.',
+      ]);
+    } finally {
+      setIsImportingStock(false);
+    }
+  };
+
+  const downloadLatestStockWorkbook = async () => {
+    setCreateFeedback(null);
+    setIsDownloadingStock(true);
+
+    try {
+      const response = await fetch(API_URL, {
+        headers: {
+          Authorization: 'Bearer ' + token,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Could not fetch the latest flavor stock.');
+      }
+
+      const flavors = mapFlavorListResponse(await response.json());
+      if (flavors.length === 0) {
+        throw new Error('No flavors are available to export.');
+      }
+
+      const { default: ExcelJS } = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Flavors Stock', {
+        views: [{ state: 'frozen', ySplit: 1 }],
+      });
+      worksheet.columns = [
+        { header: 'Flavour', key: 'flavor', width: 32 },
+        { header: 'Category', key: 'category', width: 22 },
+        { header: 'Stock', key: 'stock', width: 14 },
+        { header: 'Staff Price', key: 'staffPrice', width: 16 },
+        { header: 'Member Price', key: 'memberPrice', width: 16 },
+      ];
+      worksheet.addRows(
+        flavors.map((flavor) => ({
+          flavor: flavor.name ?? '',
+          category: flavor.category ?? '',
+          stock: Number(flavor.stock ?? 0),
+          staffPrice: Number(flavor.price ?? 0),
+          memberPrice: getMemberPrice(Number(flavor.price ?? 0)),
+        })),
+      );
+      worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF0F766E' },
+      };
+      worksheet.autoFilter = { from: 'A1', to: 'E1' };
+      worksheet.getColumn(3).numFmt = '0.##';
+      worksheet.getColumn(4).numFmt = '0.##';
+      worksheet.getColumn(5).numFmt = '0.##';
+
+      const workbookBytes = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([new Uint8Array(workbookBytes)], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const now = new Date();
+      const date = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+      ].join('-');
+      link.href = downloadUrl;
+      link.download = `Flavors-Stock-${date}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+
+      setCreateFeedback({
+        type: 'success',
+        message: `Downloaded current stock for ${flavors.length} flavors.`,
+      });
+    } catch (err) {
+      setCreateFeedback({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to download latest stock.',
+      });
+    } finally {
+      setIsDownloadingStock(false);
     }
   };
 
@@ -1334,6 +1488,36 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                   Edit Table
                 </button>
               )}
+              <input
+                ref={excelFileInputRef}
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="hidden"
+                aria-label="Upload stock Excel file"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  if (file) void importStockWorkbook(file);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => excelFileInputRef.current?.click()}
+                disabled={isImportingStock || loading}
+                className="inline-flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Upload size={14} />
+                {isImportingStock ? 'Uploading...' : 'Upload Excel'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void downloadLatestStockWorkbook()}
+                disabled={isDownloadingStock || isImportingStock || loading}
+                className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Download size={14} />
+                {isDownloadingStock ? 'Preparing...' : 'Download Latest Stock'}
+              </button>
               <TableRefreshButton
                 loading={loading}
                 onRefresh={refreshFlavors}
@@ -1341,6 +1525,19 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
               />
             </div>
           </div>
+          {excelImportErrors.length > 0 && (
+            <div
+              role="alert"
+              className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-800 sm:px-6"
+            >
+              <p className="font-semibold">Excel upload rejected. No stock was updated:</p>
+              <ul className="mt-1 list-inside list-disc">
+                {excelImportErrors.map((message, index) => (
+                  <li key={`${index}-${message}`}>{message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {!loading && isFilteringByMonth && (
             <div className="border-b border-teal-100 bg-teal-50 px-6 py-3">
               <p className="text-sm text-red-500">

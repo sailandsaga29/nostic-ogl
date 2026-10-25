@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import ExcelJS from 'exceljs/dist/exceljs.min.js';
 
 type Flavor = {
   id: number;
@@ -152,6 +153,22 @@ function firstFlavorRow(page: Page) {
   return page.locator('tbody tr').first();
 }
 
+async function makeStockWorkbook(
+  rows: unknown[][],
+  headers = ['Flavour', 'Category', 'Stock', 'Staff Price', 'Member Price'],
+) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Stock');
+  worksheet.addRow(headers);
+  rows.forEach((row) =>
+    worksheet.addRow([
+      ...row,
+      ...(row.length === 3 ? [100, 90] : []),
+    ]),
+  );
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 test.beforeEach(async ({ page }) => {
   await installFlavorApiMocks(page);
   await openFlavors(page);
@@ -193,6 +210,112 @@ test('renders stock, pricing, investment, sales status and all known categories'
   ]) {
     await expect(categoryFilter).toContainText(category);
   }
+});
+
+test('imports stock and staff price from Excel and recalculates member price', async ({ page }) => {
+  const workbook = await makeStockWorkbook([
+    ['Almond Joy', 'Popsicles', 0, 150, 135],
+    ['Lemon Zest', '100 ML', 27, 120, 108],
+  ]);
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'flavor-stock.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: workbook,
+  });
+
+  await expect(page.getByRole('status')).toContainText(
+    'Stock and staff prices updated for 2 flavors.',
+  );
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText('0');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(5)).toHaveText('₹150');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(6)).toHaveText('₹135');
+  await page.getByRole('searchbox', { name: 'Search flavors' }).fill('Lemon Zest');
+  await expect(flavorRow(page, 'Lemon Zest').getByRole('cell').nth(4)).toHaveText('27');
+  await expect(flavorRow(page, 'Lemon Zest').getByRole('cell').nth(5)).toHaveText('₹120');
+});
+
+test('downloads a latest stock workbook from the current flavor list', async ({ page }) => {
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download Latest Stock' }).click();
+  const download = await downloadPromise;
+
+  expect(download.suggestedFilename()).toMatch(/^Flavors-Stock-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  await expect(page.getByRole('status')).toContainText(
+    'Downloaded current stock for 12 flavors.',
+  );
+});
+
+test('rejects the whole Excel upload and reports row numbers for unmatched flavors', async ({
+  page,
+}) => {
+  let bulkUpdateRequests = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/flavors/bulk-update') {
+      bulkUpdateRequests += 1;
+    }
+  });
+  const workbook = await makeStockWorkbook([
+    ['Almond Joy', 'Popsicles', 0],
+    ['Not a flavor', 'Popsicles', 10],
+  ]);
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'flavor-stock.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: workbook,
+  });
+
+  await expect(page.getByRole('alert')).toContainText('Row 3');
+  await expect(page.getByRole('alert')).toContainText('No stock was updated');
+  expect(bulkUpdateRequests).toBe(0);
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText('12');
+});
+
+test('rejects negative stock without submitting any rows', async ({ page }) => {
+  const workbook = await makeStockWorkbook([['Almond Joy', 'Popsicles', -1]]);
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'invalid-stock.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: workbook,
+  });
+
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Row 2: Stock must be a non-negative number.');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText('12');
+});
+
+test('rejects duplicate flavor rows without submitting any rows', async ({ page }) => {
+  const workbook = await makeStockWorkbook([
+    ['Almond Joy', 'Popsicles', 1],
+    ['Almond Joy', 'Popsicles', 5],
+  ]);
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'invalid-stock.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: workbook,
+  });
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Row 3: Duplicate Flavour and Category entry.');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText('12');
+});
+
+test('rejects workbooks with missing required headers', async ({ page }) => {
+  const workbook = await makeStockWorkbook(
+    [['Almond Joy', 'Popsicles', 5]],
+    ['Name', 'Category', 'Stock', 'Staff Price', 'Member Price'],
+  );
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'invalid-headers.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: workbook,
+  });
+
+  await expect(page.getByRole('alert')).toContainText('Missing required "Flavour" column');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText('12');
 });
 
 test('filters known and database-provided categories and restores All', async ({ page }) => {
