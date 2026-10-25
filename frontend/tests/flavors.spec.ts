@@ -95,20 +95,24 @@ async function installFlavorApiMocks(page: Page) {
       return;
     }
     if (pathname === '/api/flavors/bulk-update' && method === 'POST') {
-      const body = route.request().postDataJSON() as { items: Flavor[] };
+      const body = route.request().postDataJSON() as {
+        items: Array<Partial<Flavor> & { id: number }>;
+      };
       flavors = flavors.map((flavor) => {
         const updated = body.items.find((item) => item.id === flavor.id);
         if (!updated) return flavor;
 
-        const quantity = Math.max(
-          0,
-          flavor.quantity + Number(updated.stock) - Number(flavor.stock),
-        );
+        const quantity =
+          typeof updated.stock === 'number'
+            ? Number(updated.stock)
+            : flavor.quantity;
         return {
           ...flavor,
           ...updated,
           quantity,
-          revenue: quantity * getMockMemberPrice(Number(updated.price)),
+          revenue:
+            quantity *
+            getMockMemberPrice(Number(updated.price ?? flavor.price)),
         };
       });
       await route.fulfill({ json: { message: 'Flavors updated' } });
@@ -359,12 +363,56 @@ test('bulk table edit updates stock for multiple flavors in one save', async ({
 
   expect(payload.items.find((item) => item.id === 1)?.stock).toBe(20);
   expect(payload.items.find((item) => item.id === 2)?.stock).toBe(30);
+  expect(payload.items.find((item) => item.id === 3)?.stock).toBeUndefined();
   await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText(
     '20',
   );
   await expect(
     flavorRow(page, 'Blueberry Blast').getByRole('cell').nth(4),
   ).toHaveText('30');
+});
+
+test('recalculates restock when zero stock is explicitly edited, even if unchanged', async ({
+  page,
+}) => {
+  let initialMonthlyResponse = true;
+  await page.route('**/api/flavors/monthly/2026/10', async (route) => {
+    if (!initialMonthlyResponse) {
+      await route.fallback();
+      return;
+    }
+    initialMonthlyResponse = false;
+    const flavors = makeFlavors().map((flavor) =>
+      flavor.id === 1
+        ? { ...flavor, stock: 0, quantity: 2, revenue: 180 }
+        : flavor,
+    );
+    await route.fulfill({ json: flavors });
+  });
+
+  await page.getByRole('button', { name: 'Refresh flavors' }).click();
+  const row = flavorRow(page, 'Almond Joy');
+  await expect(row.getByRole('cell').nth(3)).toHaveText('2');
+  await expect(row.getByRole('cell').nth(4)).toHaveText('0');
+
+  await page.getByRole('button', { name: 'Edit Table' }).click();
+  const editRow = page.locator('tbody tr').nth(0);
+  await editRow.locator('input[type="number"]').nth(0).focus();
+  const updateRequest = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/flavors/bulk-update') &&
+      request.method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Save Table' }).click();
+  const payload = (await updateRequest).postDataJSON() as {
+    items: Array<Partial<Flavor> & { id: number }>;
+  };
+
+  expect(payload.items.find((flavor) => flavor.id === 1)?.stock).toBe(0);
+  expect(payload.items.find((flavor) => flavor.id === 2)?.stock).toBeUndefined();
+  const updatedRow = flavorRow(page, 'Almond Joy');
+  await expect(updatedRow.getByRole('cell').nth(3)).toHaveText('0');
+  await expect(updatedRow.getByRole('cell').nth(7)).toHaveText('₹0');
 });
 
 test('reduces restocked quantity and investment when stock is edited down to zero', async ({
@@ -393,10 +441,10 @@ test('reduces restocked quantity and investment when stock is edited down to zer
 
   await updateFirstStock(10);
   let row = flavorRow(page, 'Almond Joy');
-  await expect(row.getByRole('cell').nth(3)).toHaveText('2');
+  await expect(row.getByRole('cell').nth(3)).toHaveText('10');
   await expect(row.getByRole('cell').nth(4)).toHaveText('10');
-  await expect(row.getByRole('cell').nth(7)).toHaveText('₹180');
-  expect(await readInvestedTotal()).toBe(initialTotal - 180);
+  await expect(row.getByRole('cell').nth(7)).toHaveText('₹900');
+  expect(await readInvestedTotal()).toBe(initialTotal + 540);
 
   await updateFirstStock(0);
   row = flavorRow(page, 'Almond Joy');

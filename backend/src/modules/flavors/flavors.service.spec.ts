@@ -101,17 +101,14 @@ describe('FlavorsService stock adjustments', () => {
     );
   });
 
-  it('decreases monthly restocked quantity and invested cost when bulk stock is reduced', async () => {
+  it('sets monthly quantity and investment to match explicitly edited stock', async () => {
     await service.bulkUpdate([{ id: 1, name: 'Mint', stock: 0 }]);
 
     expect(monthlyRecord.quantity).toBe(0);
     expect(monthlyRecord.cost).toBe(0);
     expect(monthlyRecord.rate).toBe(90);
     expect(monthlyRepo.save).toHaveBeenCalledWith(monthlyRecord);
-    const stockUpdate = queryBuilder.set.mock.calls[0][0] as {
-      stock: () => string;
-    };
-    expect(stockUpdate.stock()).toBe('COALESCE(stock, 0) + -10');
+    expect(flavorsRepo.update).toHaveBeenCalledWith(1, { stock: 0 });
   });
 
   it('updates monthly procurement when stock is edited through the single-flavor endpoint', async () => {
@@ -120,8 +117,22 @@ describe('FlavorsService stock adjustments', () => {
 
     await service.update(1, { stock: 12 });
 
-    expect(monthlyRecord.quantity).toBe(6);
-    expect(monthlyRecord.cost).toBe(540);
+    expect(monthlyRecord.quantity).toBe(12);
+    expect(monthlyRecord.cost).toBe(1080);
+    expect(monthlyRepo.save).toHaveBeenCalledWith(monthlyRecord);
+  });
+
+  it('recalculates monthly procurement when stock is explicitly set to zero again', async () => {
+    monthlyRecord.quantity = 2;
+    monthlyRecord.cost = 180;
+    const zeroStockFlavor = { ...monthlyRecord.flavor, stock: 0 } as Flavor;
+    flavorsRepo.findOne.mockResolvedValue(zeroStockFlavor);
+
+    await service.update(1, { stock: 0 });
+
+    expect(monthlyRecord.quantity).toBe(0);
+    expect(monthlyRecord.cost).toBe(0);
+    expect(flavorsRepo.update).toHaveBeenCalledWith(1, { stock: 0 });
     expect(monthlyRepo.save).toHaveBeenCalledWith(monthlyRecord);
   });
 
@@ -164,13 +175,8 @@ describe('FlavorsService stock adjustments', () => {
       { id: 2, name: 'Strawberry', stock: 9 },
     ]);
 
-    expect(queryBuilder.set).toHaveBeenCalledTimes(2);
-    expect(queryBuilder.set.mock.calls.map(([update]) =>
-      (update as { stock: () => string }).stock(),
-    )).toEqual([
-      'COALESCE(stock, 0) + 2',
-      'COALESCE(stock, 0) + 4',
-    ]);
+    expect(flavorsRepo.update).toHaveBeenCalledWith(1, { stock: 12 });
+    expect(flavorsRepo.update).toHaveBeenCalledWith(2, { stock: 9 });
     expect(monthlyRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({ flavorId: 1, quantity: 12, cost: 1080 }),
     );
@@ -257,8 +263,7 @@ describe('FlavorsService stock adjustments', () => {
       throw new Error('Expected bulk update to report a failed flavor');
     }
     expect(updateError.message).toContain('"Strawberry" (ID 2)');
-    expect(flavorsRepo.update).toHaveBeenCalledTimes(3);
-    expect(queryBuilder.set).toHaveBeenCalledTimes(2);
+    expect(flavorsRepo.update).toHaveBeenCalledTimes(5);
     expect(monthlyRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({ flavorId: 1, quantity: 12 }),
     );

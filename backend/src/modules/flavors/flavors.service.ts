@@ -73,7 +73,6 @@ export class FlavorsService {
 
   async update(id: number | string, data: Partial<Flavor>) {
     const parsedId = parseId(id);
-    const current = await this.findOne(parsedId);
     const { stock, ...fields } = data;
 
     if (
@@ -83,10 +82,7 @@ export class FlavorsService {
     }
 
     if (typeof stock === 'number') {
-      const change = stock - Number(current.stock ?? 0);
-      if (change !== 0) {
-        return this.adjustStock(parsedId, change);
-      }
+      return this.setStock(parsedId, stock);
     }
 
     return this.findOne(id);
@@ -125,14 +121,10 @@ export class FlavorsService {
           await this.flavorsRepo.update(parsedId, payload);
         }
 
-        // Process each row fully before moving to the next flavor.
+        // Process explicitly edited stock as an absolute value.
         if (typeof stock === 'number') {
-          const current = await this.findOne(parsedId);
-          const delta = Number(stock) - Number(current.stock ?? 0);
-          if (delta !== 0) {
-            updated.push(await this.adjustStock(parsedId, delta));
-            continue;
-          }
+          updated.push(await this.setStock(parsedId, stock));
+          continue;
         }
 
         updated.push(await this.findOne(parsedId));
@@ -405,6 +397,28 @@ export class FlavorsService {
       Number(monthly.quantity ?? 0) + Number(change),
     );
     const memberRate = getMemberPrice(Number(flavor.price ?? 0));
+    monthly.rate = memberRate;
+    monthly.cost = monthly.quantity * memberRate;
+    monthly.category = flavor.category;
+    await this.flavorMonthlyRepo.save(monthly);
+
+    return flavor;
+  }
+
+  async setStock(id: number | string, stock: number) {
+    const parsedId = parseId(id);
+    await this.flavorsRepo.update(parsedId, { stock });
+
+    const flavor = await this.findOne(parsedId);
+    const now = new Date();
+    const monthly = await this.ensureMonthlyRecord(
+      flavor,
+      now.getFullYear(),
+      now.getMonth() + 1,
+    );
+
+    const memberRate = getMemberPrice(Number(flavor.price ?? 0));
+    monthly.quantity = Math.max(0, Number(stock));
     monthly.rate = memberRate;
     monthly.cost = monthly.quantity * memberRate;
     monthly.category = flavor.category;

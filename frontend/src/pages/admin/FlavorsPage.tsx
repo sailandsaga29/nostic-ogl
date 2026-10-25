@@ -178,6 +178,9 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   const [bulkEditDrafts, setBulkEditDrafts] = useState<Record<number, FlavorForm>>(
     {},
   );
+  const [bulkStockEditRequested, setBulkStockEditRequested] = useState<
+    Record<number, boolean>
+  >({});
 
   const [availableYears, setAvailableYears] =
     useState<number[]>([]);
@@ -683,7 +686,9 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
             category: item.category,
             description: item.description.trim(),
             price: Number(item.price),
-            stock: Number(item.stock),
+            ...(bulkStockEditRequested[item.id]
+              ? { stock: Number(item.stock) }
+              : {}),
             image: item.image.trim(),
             isActive: item.isActive,
             isSeasonal: item.isSeasonal,
@@ -767,6 +772,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
       paginatedData.map((item) => [item.id, flavorToForm(item)]),
     ) as Record<number, FlavorForm>;
     setBulkEditDrafts(drafts);
+    setBulkStockEditRequested({});
     setIsBulkEditing(true);
     setEditingFlavorId(null);
     setEditRowFeedback(null);
@@ -776,6 +782,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   const cancelBulkEdit = () => {
     setIsBulkEditing(false);
     setBulkEditDrafts({});
+    setBulkStockEditRequested({});
     setEditRowFeedback(null);
     setEditRowFeedbackId(null);
   };
@@ -1594,10 +1601,20 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                                 type="number"
                                 min={0}
                                 value={draft.stock}
-                                onChange={(e) =>
+                                onChange={(e) => {
                                   updateBulkDraft(item.id, {
                                     stock: Number(e.target.value),
-                                  })
+                                  });
+                                  setBulkStockEditRequested((previous) => ({
+                                    ...previous,
+                                    [item.id]: true,
+                                  }));
+                                }}
+                                onFocus={() =>
+                                  setBulkStockEditRequested((previous) => ({
+                                    ...previous,
+                                    [item.id]: true,
+                                  }))
                                 }
                                 className="w-20 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm font-normal outline-none focus:border-teal-400"
                               />
