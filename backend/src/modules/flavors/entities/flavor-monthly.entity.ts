@@ -5,10 +5,14 @@ import {
   ManyToOne,
   CreateDateColumn,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Flavor } from './flavor.entity';
 
 @Entity('flavor_monthly')
+@Index('uq_flavor_monthly_flavor_year_month', ['flavorId', 'year', 'month'], {
+  unique: true,
+})
 export class FlavorMonthly {
   @PrimaryGeneratedColumn()
   id!: number;

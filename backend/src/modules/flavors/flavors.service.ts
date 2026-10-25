@@ -31,7 +31,25 @@ export class FlavorsService {
       image,
       minStock: data.minStock ?? 15,
     });
-    return this.flavorsRepo.save(f);
+    const flavor = await this.flavorsRepo.save(f);
+    const openingStock = Number(flavor.stock ?? 0);
+
+    if (openingStock > 0) {
+      const now = new Date();
+      const monthly = await this.ensureMonthlyRecord(
+        flavor,
+        now.getFullYear(),
+        now.getMonth() + 1,
+      );
+      const memberRate = getMemberPrice(Number(flavor.price ?? 0));
+      monthly.quantity = Number(monthly.quantity ?? 0) + openingStock;
+      monthly.rate = memberRate;
+      monthly.cost = monthly.quantity * memberRate;
+      monthly.category = flavor.category;
+      await this.flavorMonthlyRepo.save(monthly);
+    }
+
+    return flavor;
   }
 
   async findAll() {
@@ -301,33 +319,47 @@ export class FlavorsService {
     year: number,
     month: number,
   ) {
-    const existing = await this.flavorMonthlyRepo.findOne({
+    let monthly = await this.flavorMonthlyRepo.findOne({
       where: { flavorId: flavor.id, year, month },
     });
 
-    if (existing) {
-      return existing;
-    }
-
-    const carryForwarded = await this.resolveCarryForwarded(
-      flavor.id,
-      year,
-      month,
-    );
-
-    return this.flavorMonthlyRepo.save(
-      this.flavorMonthlyRepo.create({
-        flavor,
-        flavorId: flavor.id,
+    if (!monthly) {
+      const carryForwarded = await this.resolveCarryForwarded(
+        flavor.id,
         year,
         month,
-        carryForwarded,
-        quantity: 0,
-        rate: getMemberPrice(Number(flavor.price ?? 0)),
-        cost: 0,
-        category: flavor.category,
-      }),
-    );
+      );
+
+      await this.flavorMonthlyRepo
+        .createQueryBuilder()
+        .insert()
+        .into(FlavorMonthly)
+        .values({
+          flavor,
+          flavorId: flavor.id,
+          year,
+          month,
+          carryForwarded,
+          quantity: 0,
+          rate: getMemberPrice(Number(flavor.price ?? 0)),
+          cost: 0,
+          category: flavor.category,
+        })
+        .orIgnore()
+        .execute();
+
+      monthly = await this.flavorMonthlyRepo.findOne({
+        where: { flavorId: flavor.id, year, month },
+      });
+    }
+
+    if (!monthly) {
+      throw new Error(
+        `Failed to ensure monthly inventory record for flavor ${flavor.id} (${year}-${month})`,
+      );
+    }
+
+    return monthly;
   }
 
   async adjustStock(id: number | string, change: number) {

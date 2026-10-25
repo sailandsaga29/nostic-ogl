@@ -6,9 +6,26 @@ import { FlavorsService } from './flavors.service';
 
 describe('FlavorsService stock adjustments', () => {
   let service: FlavorsService;
-  let flavorsRepo: jest.Mocked<Pick<Repository<Flavor>, 'findOne' | 'update' | 'createQueryBuilder'>>;
-  let monthlyRepo: jest.Mocked<Pick<Repository<FlavorMonthly>, 'findOne' | 'save' | 'create'>>;
+  let flavorsRepo: jest.Mocked<
+    Pick<
+      Repository<Flavor>,
+      'findOne' | 'update' | 'createQueryBuilder' | 'create' | 'save'
+    >
+  >;
+  let monthlyRepo: jest.Mocked<
+    Pick<
+      Repository<FlavorMonthly>,
+      'findOne' | 'save' | 'create' | 'createQueryBuilder'
+    >
+  >;
   let monthlyRecord: FlavorMonthly;
+  let monthlyInsertBuilder: {
+    insert: jest.Mock;
+    into: jest.Mock;
+    values: jest.Mock;
+    orIgnore: jest.Mock;
+    execute: jest.Mock;
+  };
   let queryBuilder: {
     update: jest.Mock;
     set: jest.Mock;
@@ -53,16 +70,27 @@ describe('FlavorsService stock adjustments', () => {
       execute: jest.fn().mockResolvedValue({}),
     };
 
+    monthlyInsertBuilder = {
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      orIgnore: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({}),
+    };
+
     flavorsRepo = {
       findOne: jest.fn().mockResolvedValue(flavor),
       update: jest.fn().mockResolvedValue({}),
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      create: jest.fn((record) => record as Flavor),
+      save: jest.fn(async (record) => record as Flavor),
     } as unknown as typeof flavorsRepo;
 
     monthlyRepo = {
       findOne: jest.fn().mockResolvedValue(monthlyRecord),
       save: jest.fn(async (record) => record),
       create: jest.fn((record) => record as FlavorMonthly),
+      createQueryBuilder: jest.fn().mockReturnValue(monthlyInsertBuilder),
     } as unknown as typeof monthlyRepo;
 
     service = new FlavorsService(
@@ -94,5 +122,40 @@ describe('FlavorsService stock adjustments', () => {
     expect(monthlyRecord.quantity).toBe(6);
     expect(monthlyRecord.cost).toBe(540);
     expect(monthlyRepo.save).toHaveBeenCalledWith(monthlyRecord);
+  });
+
+  it('records opening stock as this month’s restock and investment', async () => {
+    const flavor = {
+      id: 2,
+      name: 'Mango',
+      category: 'Popsicles',
+      price: 100,
+      stock: 8,
+    } as Flavor;
+    const createdMonthlyRecord = {
+      ...monthlyRecord,
+      flavor,
+      flavorId: 2,
+      quantity: 0,
+      cost: 0,
+    };
+    flavorsRepo.create.mockReturnValue(flavor);
+    flavorsRepo.save.mockResolvedValue(flavor);
+    monthlyRepo.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(createdMonthlyRecord);
+
+    await service.create(flavor);
+
+    expect(monthlyRepo.save).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        flavorId: 2,
+        quantity: 8,
+        rate: 90,
+        cost: 720,
+      }),
+    );
+    expect(monthlyInsertBuilder.orIgnore).toHaveBeenCalled();
   });
 });

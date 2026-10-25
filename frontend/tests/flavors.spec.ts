@@ -366,12 +366,14 @@ test('reduces restocked quantity and investment when stock is edited down to zer
   await updateFirstStock(10);
   let row = flavorRow(page, 'Almond Joy');
   await expect(row.getByRole('cell').nth(3)).toHaveText('2');
+  await expect(row.getByRole('cell').nth(4)).toHaveText('10');
   await expect(row.getByRole('cell').nth(7)).toHaveText('₹180');
   expect(await readInvestedTotal()).toBe(initialTotal - 180);
 
   await updateFirstStock(0);
   row = flavorRow(page, 'Almond Joy');
   await expect(row.getByRole('cell').nth(3)).toHaveText('0');
+  await expect(row.getByRole('cell').nth(4)).toHaveText('0');
   await expect(row.getByRole('cell').nth(7)).toHaveText('₹0');
   expect(await readInvestedTotal()).toBe(initialTotal - 360);
 });

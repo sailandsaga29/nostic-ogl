@@ -97,6 +97,99 @@ export async function runStartupMigrations(
         END $$;
       `);
     }
+
+    const monthlyTable = await dataSource.query<{ exists: boolean }[]>(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'flavor_monthly'
+       ) AS "exists"`,
+    );
+    const flavorsTable = await dataSource.query<{ exists: boolean }[]>(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'flavors'
+       ) AS "exists"`,
+    );
+
+    if (monthlyTable[0]?.exists && flavorsTable[0]?.exists) {
+      const queryRunner = dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+
+      try {
+        await queryRunner.query(
+          'LOCK TABLE flavor_monthly IN SHARE ROW EXCLUSIVE MODE',
+        );
+        await queryRunner.query(`
+          WITH ranked AS (
+            SELECT
+              id,
+              ROW_NUMBER() OVER (
+                PARTITION BY "flavorId", year, month
+                ORDER BY "createdAt" ASC, id ASC
+              ) AS row_number,
+              COUNT(*) OVER (
+                PARTITION BY "flavorId", year, month
+              ) AS duplicate_count,
+              SUM(quantity) OVER (
+                PARTITION BY "flavorId", year, month
+              ) AS merged_quantity,
+              SUM(cost) OVER (
+                PARTITION BY "flavorId", year, month
+              ) AS merged_cost,
+              MAX("carryForwarded") OVER (
+                PARTITION BY "flavorId", year, month
+              ) AS merged_carry_forwarded,
+              FIRST_VALUE(rate) OVER (
+                PARTITION BY "flavorId", year, month
+                ORDER BY "createdAt" DESC, id DESC
+              ) AS latest_rate,
+              FIRST_VALUE(category) OVER (
+                PARTITION BY "flavorId", year, month
+                ORDER BY "createdAt" DESC, id DESC
+              ) AS latest_category
+            FROM flavor_monthly
+          )
+          UPDATE flavor_monthly AS monthly
+          SET
+            quantity = ranked.merged_quantity,
+            cost = ranked.merged_cost,
+            "carryForwarded" = ranked.merged_carry_forwarded,
+            rate = ranked.latest_rate,
+            category = ranked.latest_category
+          FROM ranked
+          WHERE monthly.id = ranked.id
+            AND ranked.row_number = 1
+            AND ranked.duplicate_count > 1;
+        `);
+        await queryRunner.query(`
+          WITH ranked AS (
+            SELECT
+              id,
+              ROW_NUMBER() OVER (
+                PARTITION BY "flavorId", year, month
+                ORDER BY "createdAt" ASC, id ASC
+              ) AS row_number
+            FROM flavor_monthly
+          )
+          DELETE FROM flavor_monthly AS monthly
+          USING ranked
+          WHERE monthly.id = ranked.id
+            AND ranked.row_number > 1;
+        `);
+        await queryRunner.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS
+            uq_flavor_monthly_flavor_year_month
+          ON flavor_monthly ("flavorId", year, month);
+        `);
+        await queryRunner.commitTransaction();
+      } catch (error) {
+        await queryRunner.rollbackTransaction();
+        throw error;
+      } finally {
+        await queryRunner.release();
+      }
+    }
   } finally {
     if (dataSource.isInitialized) {
       await dataSource.destroy();
