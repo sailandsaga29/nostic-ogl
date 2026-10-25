@@ -57,6 +57,21 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Flavor monthly uniqueness migration
+
+The `flavor_monthly` table must contain at most one row per flavor, year, and
+month. Run the idempotent migration against the target PostgreSQL database
+before deployment:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/20261025-deduplicate-flavor-monthly.sql
+```
+
+The migration combines duplicate quantities and costs, keeps the latest rate
+and category, removes duplicate rows, and creates a unique index on
+`("flavorId", year, month)`. Application startup also applies the same
+deduplication and index safeguard before TypeORM synchronization.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
