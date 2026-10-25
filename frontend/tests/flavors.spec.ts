@@ -100,12 +100,10 @@ async function installFlavorApiMocks(page: Page) {
         const updated = body.items.find((item) => item.id === flavor.id);
         if (!updated) return flavor;
 
-        const quantity = updated.resetMonthlyProcurement
-          ? 0
-          : Math.max(
-              0,
-              flavor.quantity + Number(updated.stock) - Number(flavor.stock),
-            );
+        const quantity = Math.max(
+          0,
+          flavor.quantity + Number(updated.stock) - Number(flavor.stock),
+        );
         return {
           ...flavor,
           ...updated,
@@ -367,52 +365,6 @@ test('bulk table edit updates stock for multiple flavors in one save', async ({
   await expect(
     flavorRow(page, 'Blueberry Blast').getByRole('cell').nth(4),
   ).toHaveText('30');
-});
-
-test('clears monthly procurement when explicitly resetting already-zero stock', async ({
-  page,
-}) => {
-  let initialMonthlyResponse = true;
-  await page.route('**/api/flavors/monthly/2026/10', async (route) => {
-    if (!initialMonthlyResponse) {
-      await route.fallback();
-      return;
-    }
-    initialMonthlyResponse = false;
-    const flavors = makeFlavors().map((flavor) =>
-      flavor.id === 1
-        ? { ...flavor, stock: 0, quantity: 4, revenue: 360 }
-        : flavor,
-    );
-    await route.fulfill({ json: flavors });
-  });
-
-  await page.getByRole('button', { name: 'Refresh flavors' }).click();
-  const row = flavorRow(page, 'Almond Joy');
-  await expect(row.getByRole('cell').nth(3)).toHaveText('4');
-  await expect(row.getByRole('cell').nth(4)).toHaveText('0');
-  await expect(row.getByRole('cell').nth(7)).toHaveText('₹360');
-
-  await page.getByRole('button', { name: 'Edit Table' }).click();
-  await expect(page.getByRole('button', { name: 'Save Table' })).toBeVisible();
-  await page.getByRole('button', { name: 'Reset restock' }).click();
-  const updateRequest = page.waitForRequest(
-    (request) =>
-      request.url().endsWith('/api/flavors/bulk-update') &&
-      request.method() === 'POST',
-  );
-  await page.getByRole('button', { name: 'Save Table' }).click();
-  const payload = (await updateRequest).postDataJSON() as {
-    items: Array<Flavor & { resetMonthlyProcurement?: boolean }>;
-  };
-  expect(
-    payload.items.find((flavor) => flavor.id === 1)?.resetMonthlyProcurement,
-  ).toBe(true);
-
-  const updatedRow = flavorRow(page, 'Almond Joy');
-  await expect(updatedRow.getByRole('cell').nth(3)).toHaveText('0');
-  await expect(updatedRow.getByRole('cell').nth(4)).toHaveText('0');
-  await expect(updatedRow.getByRole('cell').nth(7)).toHaveText('₹0');
 });
 
 test('reduces restocked quantity and investment when stock is edited down to zero', async ({

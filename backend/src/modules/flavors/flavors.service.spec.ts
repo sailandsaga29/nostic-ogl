@@ -4,9 +4,6 @@ import { FlavorMonthly } from './entities/flavor-monthly.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { FlavorsService } from './flavors.service';
 import { InternalServerErrorException } from '@nestjs/common';
-import { plainToInstance } from 'class-transformer';
-import { validateSync } from 'class-validator';
-import { BulkUpdateFlavorsDto } from './dto/bulk-update-flavors.dto';
 
 describe('FlavorsService stock adjustments', () => {
   let service: FlavorsService;
@@ -180,69 +177,6 @@ describe('FlavorsService stock adjustments', () => {
     expect(monthlyRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({ flavorId: 2, quantity: 9, cost: 648 }),
     );
-  });
-
-  it('clears monthly restock and investment when zero stock is explicitly reset', async () => {
-    const zeroStockFlavor = {
-      ...monthlyRecord.flavor,
-      stock: 0,
-    } as Flavor;
-    monthlyRecord.quantity = 22;
-    monthlyRecord.cost = 1980;
-    flavorsRepo.findOne.mockResolvedValue(zeroStockFlavor);
-
-    await service.bulkUpdate([
-      {
-        id: 1,
-        name: 'Mint',
-        stock: 0,
-        resetMonthlyProcurement: true,
-      },
-    ]);
-
-    expect(monthlyRecord.quantity).toBe(0);
-    expect(monthlyRecord.cost).toBe(0);
-    expect(queryBuilder.set).toHaveBeenCalledTimes(1);
-    expect(
-      (queryBuilder.set.mock.calls[0][0] as { stock: () => string }).stock(),
-    ).toBe('COALESCE(stock, 0) + 0');
-  });
-
-  it('accepts the monthly reset flag in bulk update validation', () => {
-    const body = plainToInstance(BulkUpdateFlavorsDto, {
-      items: [
-        {
-          id: 1,
-          name: 'Mint',
-          category: 'Popsicles',
-          stock: 0,
-          resetMonthlyProcurement: true,
-        },
-      ],
-    });
-
-    expect(
-      validateSync(body, {
-        whitelist: true,
-        forbidNonWhitelisted: true,
-      }),
-    ).toHaveLength(0);
-  });
-
-  it('keeps monthly procurement when a zero-stock row is not explicitly reset', async () => {
-    const zeroStockFlavor = {
-      ...monthlyRecord.flavor,
-      stock: 0,
-    } as Flavor;
-    monthlyRecord.quantity = 22;
-    monthlyRecord.cost = 1980;
-    flavorsRepo.findOne.mockResolvedValue(zeroStockFlavor);
-
-    await service.bulkUpdate([{ id: 1, name: 'Mint', stock: 0 }]);
-
-    expect(monthlyRecord.quantity).toBe(22);
-    expect(monthlyRecord.cost).toBe(1980);
-    expect(queryBuilder.set).not.toHaveBeenCalled();
   });
 
   it('reports failed flavor names and continues processing the remaining rows', async () => {

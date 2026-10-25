@@ -71,13 +71,10 @@ export class FlavorsService {
     return f;
   }
 
-  async update(
-    id: number | string,
-    data: Partial<Flavor> & { resetMonthlyProcurement?: boolean },
-  ) {
+  async update(id: number | string, data: Partial<Flavor>) {
     const parsedId = parseId(id);
     const current = await this.findOne(parsedId);
-    const { stock, resetMonthlyProcurement, ...fields } = data;
+    const { stock, ...fields } = data;
 
     if (
       Object.values(fields).some((value) => value !== undefined)
@@ -87,13 +84,8 @@ export class FlavorsService {
 
     if (typeof stock === 'number') {
       const change = stock - Number(current.stock ?? 0);
-      if (
-        change !== 0 ||
-        (stock === 0 && resetMonthlyProcurement === true)
-      ) {
-        return this.adjustStock(parsedId, change, {
-          resetMonthlyProcurement: stock === 0 && resetMonthlyProcurement === true,
-        });
+      if (change !== 0) {
+        return this.adjustStock(parsedId, change);
       }
     }
 
@@ -104,7 +96,6 @@ export class FlavorsService {
     items: Array<
       Omit<Partial<Flavor>, 'id'> & {
         id: number | string;
-        resetMonthlyProcurement?: boolean;
       }
     >,
   ) {
@@ -118,12 +109,7 @@ export class FlavorsService {
           typeof item.image === 'string'
             ? item.image.trim() || null
             : item.image;
-        const {
-          id: _id,
-          stock,
-          resetMonthlyProcurement,
-          ...rest
-        } = item;
+        const { id: _id, stock, ...rest } = item;
 
         const payload: Partial<Flavor> = {
           ...rest,
@@ -143,16 +129,8 @@ export class FlavorsService {
         if (typeof stock === 'number') {
           const current = await this.findOne(parsedId);
           const delta = Number(stock) - Number(current.stock ?? 0);
-          if (
-            delta !== 0 ||
-            (stock === 0 && resetMonthlyProcurement === true)
-          ) {
-            updated.push(
-              await this.adjustStock(parsedId, delta, {
-                resetMonthlyProcurement:
-                  stock === 0 && resetMonthlyProcurement === true,
-              }),
-            );
+          if (delta !== 0) {
+            updated.push(await this.adjustStock(parsedId, delta));
             continue;
           }
         }
@@ -404,11 +382,7 @@ export class FlavorsService {
     return monthly;
   }
 
-  async adjustStock(
-    id: number | string,
-    change: number,
-    options?: { resetMonthlyProcurement?: boolean },
-  ) {
+  async adjustStock(id: number | string, change: number) {
     const parsedId = parseId(id);
     await this.flavorsRepo
       .createQueryBuilder()
@@ -426,9 +400,10 @@ export class FlavorsService {
     const year = now.getFullYear();
     const monthly = await this.ensureMonthlyRecord(flavor, year, month);
 
-    monthly.quantity = options?.resetMonthlyProcurement
-      ? 0
-      : Math.max(0, Number(monthly.quantity ?? 0) + Number(change));
+    monthly.quantity = Math.max(
+      0,
+      Number(monthly.quantity ?? 0) + Number(change),
+    );
     const memberRate = getMemberPrice(Number(flavor.price ?? 0));
     monthly.rate = memberRate;
     monthly.cost = monthly.quantity * memberRate;
