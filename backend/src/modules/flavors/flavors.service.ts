@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, In } from 'typeorm';
 import { Flavor } from './entities/flavor.entity';
@@ -95,8 +99,11 @@ export class FlavorsService {
       }
     >,
   ) {
-    const updated = await Promise.all(
-      items.map(async (item) => {
+    const updated: Flavor[] = [];
+    const failedItems: string[] = [];
+
+    for (const item of items) {
+      try {
         const parsedId = parseId(item.id);
         const image =
           typeof item.image === 'string'
@@ -118,18 +125,31 @@ export class FlavorsService {
           await this.flavorsRepo.update(parsedId, payload);
         }
 
-        // Stock changes use the same path as Add (monthly qty + member rate).
+        // Process each row fully before moving to the next flavor.
         if (typeof stock === 'number') {
           const current = await this.findOne(parsedId);
           const delta = Number(stock) - Number(current.stock ?? 0);
           if (delta !== 0) {
-            return this.adjustStock(parsedId, delta);
+            updated.push(await this.adjustStock(parsedId, delta));
+            continue;
           }
         }
 
-        return this.findOne(parsedId);
-      }),
-    );
+        updated.push(await this.findOne(parsedId));
+      } catch {
+        const name =
+          typeof item.name === 'string' && item.name.trim()
+            ? item.name.trim()
+            : `ID ${item.id}`;
+        failedItems.push(`"${name}" (ID ${item.id})`);
+      }
+    }
+
+    if (failedItems.length > 0) {
+      throw new InternalServerErrorException(
+        `Failed to update ${failedItems.join(', ')}. Other flavors were processed; successful changes have been saved.`,
+      );
+    }
 
     return updated;
   }

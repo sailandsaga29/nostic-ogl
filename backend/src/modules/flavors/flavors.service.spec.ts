@@ -3,6 +3,7 @@ import { Flavor } from './entities/flavor.entity';
 import { FlavorMonthly } from './entities/flavor-monthly.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { FlavorsService } from './flavors.service';
+import { InternalServerErrorException } from '@nestjs/common';
 
 describe('FlavorsService stock adjustments', () => {
   let service: FlavorsService;
@@ -122,6 +123,148 @@ describe('FlavorsService stock adjustments', () => {
     expect(monthlyRecord.quantity).toBe(6);
     expect(monthlyRecord.cost).toBe(540);
     expect(monthlyRepo.save).toHaveBeenCalledWith(monthlyRecord);
+  });
+
+  it('updates stock for every flavor in one bulk edit', async () => {
+    const secondFlavor = {
+      id: 2,
+      name: 'Strawberry',
+      category: 'Popsicles',
+      price: 80,
+      stock: 5,
+    } as Flavor;
+    const secondMonthlyRecord = {
+      ...monthlyRecord,
+      id: 2,
+      flavor: secondFlavor,
+      flavorId: 2,
+      quantity: 5,
+      rate: 72,
+      cost: 360,
+    } as FlavorMonthly;
+
+    flavorsRepo.findOne.mockImplementation(async (options) => {
+      const where = Array.isArray(options.where)
+        ? options.where[0]
+        : options.where;
+      const id = where?.id;
+      return (id === secondFlavor.id ? secondFlavor : monthlyRecord.flavor) as Flavor;
+    });
+    monthlyRepo.findOne.mockImplementation(async (options) => {
+      const where = Array.isArray(options.where)
+        ? options.where[0]
+        : options.where;
+      return where?.flavorId === secondFlavor.id
+        ? secondMonthlyRecord
+        : monthlyRecord;
+    });
+
+    await service.bulkUpdate([
+      { id: 1, name: 'Mint', stock: 12 },
+      { id: 2, name: 'Strawberry', stock: 9 },
+    ]);
+
+    expect(queryBuilder.set).toHaveBeenCalledTimes(2);
+    expect(queryBuilder.set.mock.calls.map(([update]) =>
+      (update as { stock: () => string }).stock(),
+    )).toEqual([
+      'COALESCE(stock, 0) + 2',
+      'COALESCE(stock, 0) + 4',
+    ]);
+    expect(monthlyRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ flavorId: 1, quantity: 12, cost: 1080 }),
+    );
+    expect(monthlyRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ flavorId: 2, quantity: 9, cost: 648 }),
+    );
+  });
+
+  it('reports failed flavor names and continues processing the remaining rows', async () => {
+    const strawberry = {
+      ...monthlyRecord.flavor,
+      id: 2,
+      name: 'Strawberry',
+      stock: 5,
+    } as Flavor;
+    const coconut = {
+      ...monthlyRecord.flavor,
+      id: 3,
+      name: 'Tinder Coco',
+      stock: 2,
+    } as Flavor;
+    const monthlyRecords = new Map<number, FlavorMonthly>([
+      [1, monthlyRecord],
+      [
+        2,
+        {
+          ...monthlyRecord,
+          id: 2,
+          flavor: strawberry,
+          flavorId: 2,
+          quantity: 5,
+          cost: 450,
+        },
+      ],
+      [
+        3,
+        {
+          ...monthlyRecord,
+          id: 3,
+          flavor: coconut,
+          flavorId: 3,
+          quantity: 2,
+          cost: 180,
+        },
+      ],
+    ]);
+    const flavors = new Map<number, Flavor>([
+      [1, monthlyRecord.flavor],
+      [2, strawberry],
+      [3, coconut],
+    ]);
+    flavorsRepo.findOne.mockImplementation(async (options) => {
+      const where = Array.isArray(options.where)
+        ? options.where[0]
+        : options.where;
+      return flavors.get(Number(where?.id)) ?? null;
+    });
+    flavorsRepo.update.mockImplementation(async (id) => {
+      if (Number(id) === strawberry.id) {
+        throw new Error('Simulated update failure');
+      }
+      return { raw: [], generatedMaps: [] };
+    });
+    monthlyRepo.findOne.mockImplementation(async (options) => {
+      const where = Array.isArray(options.where)
+        ? options.where[0]
+        : options.where;
+      return monthlyRecords.get(Number(where?.flavorId)) ?? null;
+    });
+
+    let updateError: unknown;
+    try {
+      await service.bulkUpdate([
+        { id: 1, name: 'Mint', stock: 12 },
+        { id: 2, name: 'Strawberry', stock: 9 },
+        { id: 3, name: 'Tinder Coco', stock: 7 },
+      ]);
+    } catch (error) {
+      updateError = error;
+    }
+
+    expect(updateError).toBeInstanceOf(InternalServerErrorException);
+    if (!(updateError instanceof Error)) {
+      throw new Error('Expected bulk update to report a failed flavor');
+    }
+    expect(updateError.message).toContain('"Strawberry" (ID 2)');
+    expect(flavorsRepo.update).toHaveBeenCalledTimes(3);
+    expect(queryBuilder.set).toHaveBeenCalledTimes(2);
+    expect(monthlyRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ flavorId: 1, quantity: 12 }),
+    );
+    expect(monthlyRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ flavorId: 3, quantity: 7 }),
+    );
   });
 
   it('records opening stock as this month’s restock and investment', async () => {

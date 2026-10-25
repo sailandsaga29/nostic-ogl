@@ -339,6 +339,34 @@ test('bulk table edit saves changes across editable fields', async ({ page }) =>
   await expect(page.getByRole('button', { name: 'Edit Table' })).toBeVisible();
 });
 
+test('bulk table edit updates stock for multiple flavors in one save', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: 'Edit Table' }).click();
+  await expect(page.getByRole('button', { name: 'Save Table' })).toBeVisible();
+  const firstRow = page.locator('tbody tr').nth(0);
+  const secondRow = page.locator('tbody tr').nth(1);
+  await firstRow.locator('input[type="number"]').nth(0).fill('20');
+  await secondRow.locator('input[type="number"]').nth(0).fill('30');
+
+  const updateRequest = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/flavors/bulk-update') &&
+      request.method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Save Table' }).click();
+  const payload = (await updateRequest).postDataJSON() as { items: Flavor[] };
+
+  expect(payload.items.find((item) => item.id === 1)?.stock).toBe(20);
+  expect(payload.items.find((item) => item.id === 2)?.stock).toBe(30);
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText(
+    '20',
+  );
+  await expect(
+    flavorRow(page, 'Blueberry Blast').getByRole('cell').nth(4),
+  ).toHaveText('30');
+});
+
 test('reduces restocked quantity and investment when stock is edited down to zero', async ({
   page,
 }) => {
@@ -414,6 +442,27 @@ test('keeps table editing open and reports an API error when bulk save fails', a
   await expect(page.getByText('Bulk update rejected for test')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save Table' })).toBeVisible();
   await expect(firstFlavorRow(page).locator('input[type="text"]')).toHaveValue('Rejected Update');
+});
+
+test('shows which flavor failed when a bulk save partially fails', async ({
+  page,
+}) => {
+  await page.route('**/api/flavors/bulk-update', async (route) => {
+    await route.fulfill({
+      status: 500,
+      json: {
+        message:
+          'Failed to update "Strawberry" (ID 2). Other flavors were processed; successful changes have been saved.',
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'Edit Table' }).click();
+  await page.getByRole('button', { name: 'Save Table' }).click();
+
+  await expect(
+    page.getByText(/Failed to update "Strawberry" \(ID 2\)/),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save Table' })).toBeVisible();
 });
 
 for (const invalid of [
