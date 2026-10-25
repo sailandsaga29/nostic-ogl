@@ -178,6 +178,9 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   const [bulkEditDrafts, setBulkEditDrafts] = useState<Record<number, FlavorForm>>(
     {},
   );
+  const [bulkStockResetRequested, setBulkStockResetRequested] = useState<
+    Record<number, boolean>
+  >({});
 
   const [availableYears, setAvailableYears] =
     useState<number[]>([]);
@@ -684,6 +687,10 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
             description: item.description.trim(),
             price: Number(item.price),
             stock: Number(item.stock),
+            ...(bulkStockResetRequested[item.id] === true &&
+            Number(item.stock) === 0
+              ? { resetMonthlyProcurement: true }
+              : {}),
             image: item.image.trim(),
             isActive: item.isActive,
             isSeasonal: item.isSeasonal,
@@ -767,6 +774,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
       paginatedData.map((item) => [item.id, flavorToForm(item)]),
     ) as Record<number, FlavorForm>;
     setBulkEditDrafts(drafts);
+    setBulkStockResetRequested({});
     setIsBulkEditing(true);
     setEditingFlavorId(null);
     setEditRowFeedback(null);
@@ -776,6 +784,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   const cancelBulkEdit = () => {
     setIsBulkEditing(false);
     setBulkEditDrafts({});
+    setBulkStockResetRequested({});
     setEditRowFeedback(null);
     setEditRowFeedbackId(null);
   };
@@ -1590,17 +1599,43 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                             }`}
                           >
                             {isBulkEditing ? (
-                              <input
-                                type="number"
-                                min={0}
-                                value={draft.stock}
-                                onChange={(e) =>
-                                  updateBulkDraft(item.id, {
-                                    stock: Number(e.target.value),
-                                  })
-                                }
-                                className="w-20 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm font-normal outline-none focus:border-teal-400"
-                              />
+                              <>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={draft.stock}
+                                  onChange={(e) => {
+                                    const stock = Number(e.target.value);
+                                    updateBulkDraft(item.id, { stock });
+                                    setBulkStockResetRequested((previous) => ({
+                                      ...previous,
+                                      [item.id]: stock === 0,
+                                    }));
+                                  }}
+                                  className="w-20 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm font-normal outline-none focus:border-teal-400"
+                                />
+                                {isFilteringByMonth &&
+                                  isCurrentMonth(
+                                    selectedYear,
+                                    getMonthNumber(selectedMonth),
+                                  ) &&
+                                  Number(draft.stock) === 0 &&
+                                  (Number(item.quantity ?? 0) > 0 ||
+                                    Number(item.revenue ?? 0) > 0) && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setBulkStockResetRequested((previous) => ({
+                                          ...previous,
+                                          [item.id]: true,
+                                        }))
+                                      }
+                                      className="mt-1 block w-full text-xs font-medium text-rose-600 hover:text-rose-800"
+                                    >
+                                      Reset restock
+                                    </button>
+                                  )}
+                              </>
                             ) : (
                               item.stock ?? 0
                             )}
