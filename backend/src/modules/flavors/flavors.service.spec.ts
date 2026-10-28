@@ -58,8 +58,8 @@ describe('FlavorsService stock adjustments', () => {
       year: new Date().getFullYear(),
       carryForwarded: 0,
       quantity: 10,
-      rate: 90,
-      cost: 900,
+      rate: 60,
+      cost: 600,
       category: flavor.category,
       createdAt: new Date(),
     };
@@ -106,7 +106,7 @@ describe('FlavorsService stock adjustments', () => {
 
     expect(monthlyRecord.quantity).toBe(0);
     expect(monthlyRecord.cost).toBe(0);
-    expect(monthlyRecord.rate).toBe(90);
+    expect(monthlyRecord.rate).toBe(60);
     expect(monthlyRepo.save).toHaveBeenCalledWith(monthlyRecord);
     expect(flavorsRepo.update).toHaveBeenCalledWith(1, { stock: 0 });
   });
@@ -118,7 +118,7 @@ describe('FlavorsService stock adjustments', () => {
     await service.update(1, { stock: 12 });
 
     expect(monthlyRecord.quantity).toBe(12);
-    expect(monthlyRecord.cost).toBe(1080);
+    expect(monthlyRecord.cost).toBe(720);
     expect(monthlyRepo.save).toHaveBeenCalledWith(monthlyRecord);
   });
 
@@ -150,8 +150,8 @@ describe('FlavorsService stock adjustments', () => {
       flavor: secondFlavor,
       flavorId: 2,
       quantity: 5,
-      rate: 72,
-      cost: 360,
+      rate: 48,
+      cost: 240,
     } as FlavorMonthly;
 
     flavorsRepo.findOne.mockImplementation(async (options) => {
@@ -178,10 +178,10 @@ describe('FlavorsService stock adjustments', () => {
     expect(flavorsRepo.update).toHaveBeenCalledWith(1, { stock: 12 });
     expect(flavorsRepo.update).toHaveBeenCalledWith(2, { stock: 9 });
     expect(monthlyRepo.save).toHaveBeenCalledWith(
-      expect.objectContaining({ flavorId: 1, quantity: 12, cost: 1080 }),
+      expect.objectContaining({ flavorId: 1, quantity: 12, cost: 720 }),
     );
     expect(monthlyRepo.save).toHaveBeenCalledWith(
-      expect.objectContaining({ flavorId: 2, quantity: 9, cost: 648 }),
+      expect.objectContaining({ flavorId: 2, quantity: 9, cost: 432 }),
     );
   });
 
@@ -208,7 +208,7 @@ describe('FlavorsService stock adjustments', () => {
           flavor: strawberry,
           flavorId: 2,
           quantity: 5,
-          cost: 450,
+          cost: 300,
         },
       ],
       [
@@ -219,7 +219,7 @@ describe('FlavorsService stock adjustments', () => {
           flavor: coconut,
           flavorId: 3,
           quantity: 2,
-          cost: 180,
+          cost: 120,
         },
       ],
     ]);
@@ -300,8 +300,8 @@ describe('FlavorsService stock adjustments', () => {
       expect.objectContaining({
         flavorId: 2,
         quantity: 8,
-        rate: 90,
-        cost: 720,
+        rate: 60,
+        cost: 480,
       }),
     );
     expect(monthlyInsertBuilder.orIgnore).toHaveBeenCalled();

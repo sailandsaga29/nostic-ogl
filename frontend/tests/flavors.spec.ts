@@ -49,7 +49,7 @@ const makeFlavors = (): Flavor[] => {
 };
 
 function getMockMemberPrice(staffPrice: number) {
-  const discounted = staffPrice * 0.9;
+  const discounted = staffPrice * 0.6;
   const whole = Math.floor(discounted);
   return discounted - whole > 0.5 ? whole + 1 : whole;
 }
@@ -195,8 +195,8 @@ test('renders stock, pricing, investment, sales status and all known categories'
   await expect(flavorRow(page, 'Almond Joy')).toContainText('₹100');
   await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(2)).toHaveText('0');
   await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(3)).toHaveText('4');
-  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(6)).toHaveText('₹90');
-  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(7)).toHaveText('₹360');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(6)).toHaveText('₹60');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(7)).toHaveText('₹240');
   const categoryFilter = page.getByLabel('Filter by category');
   for (const category of [
     'Popsicles',
@@ -229,7 +229,7 @@ test('imports stock and staff price from Excel and recalculates member price', a
   );
   await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText('0');
   await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(5)).toHaveText('₹150');
-  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(6)).toHaveText('₹135');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(6)).toHaveText('₹90');
   await page.getByRole('searchbox', { name: 'Search flavors' }).fill('Lemon Zest');
   await expect(flavorRow(page, 'Lemon Zest').getByRole('cell').nth(4)).toHaveText('27');
   await expect(flavorRow(page, 'Lemon Zest').getByRole('cell').nth(5)).toHaveText('₹120');
@@ -440,7 +440,7 @@ test('bulk table edit saves changes across editable fields', async ({ page }) =>
   await row.locator('input[type="number"]').nth(1).fill('150');
   await row.locator('input[type="checkbox"]').nth(0).uncheck();
   await row.locator('input[type="checkbox"]').nth(1).check();
-  await expect(row.getByRole('cell').nth(6)).toHaveText('₹135');
+  await expect(row.getByRole('cell').nth(6)).toHaveText('₹90');
 
   const updateRequest = page.waitForRequest(
     (request) =>
@@ -566,15 +566,15 @@ test('reduces restocked quantity and investment when stock is edited down to zer
   let row = flavorRow(page, 'Almond Joy');
   await expect(row.getByRole('cell').nth(3)).toHaveText('10');
   await expect(row.getByRole('cell').nth(4)).toHaveText('10');
-  await expect(row.getByRole('cell').nth(7)).toHaveText('₹900');
-  expect(await readInvestedTotal()).toBe(initialTotal + 540);
+  await expect(row.getByRole('cell').nth(7)).toHaveText('₹600');
+  expect(await readInvestedTotal()).toBe(initialTotal + 360);
 
   await updateFirstStock(0);
   row = flavorRow(page, 'Almond Joy');
   await expect(row.getByRole('cell').nth(3)).toHaveText('0');
   await expect(row.getByRole('cell').nth(4)).toHaveText('0');
   await expect(row.getByRole('cell').nth(7)).toHaveText('₹0');
-  expect(await readInvestedTotal()).toBe(initialTotal - 360);
+  expect(await readInvestedTotal()).toBe(initialTotal - 240);
 });
 
 test('cancels bulk edits without persisting draft changes', async ({ page }) => {

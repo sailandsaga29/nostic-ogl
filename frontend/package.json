@@ -7,6 +7,7 @@
     "dev": "vite --host",
     "start": "vite --host",
     "build": "tsc && vite build",
+    "test:e2e": "playwright test --config=playwright.config.ts",
     "test:flavors": "playwright test --config=playwright.config.ts tests/flavors.spec.ts",
     "preview": "vite preview",
     "watch": "vite build --watch"

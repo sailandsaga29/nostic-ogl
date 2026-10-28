@@ -1,4 +1,4 @@
-const MEMBER_DISCOUNT_RATE = 0.1;
+const MEMBER_DISCOUNT_RATE = 0.4;
 
 /** > 0.5 rounds up; 0.5 and below rounds down (e.g. 22.5 → 22, 22.6 → 23). */
 export function roundMemberPrice(value: number): number {
@@ -8,7 +8,7 @@ export function roundMemberPrice(value: number): number {
   return fractional > 0.5 ? whole + 1 : whole;
 }
 
-/** Member price is 10% lower than the staff (base) price. */
+/** Member price is 40% lower than the staff (base) price. */
 export function getMemberPrice(staffPrice: number): number {
   const price = Number(staffPrice) || 0;
   const discounted = price * (1 - MEMBER_DISCOUNT_RATE);

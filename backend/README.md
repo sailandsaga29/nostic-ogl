@@ -57,6 +57,20 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Seed login users
+
+Set `SEED_SUPER_ADMIN_PASSWORD`, `SEED_MANAGER_PASSWORD`, and
+`SEED_STAFF_PASSWORD` in your ignored `.env` file, then run:
+
+```bash
+npm run seed
+```
+
+The seed creates missing users for `admin@icecream.com`,
+`manager@icecream.com`, and `staff@icecream.com`. Passwords are stored as
+bcrypt hashes. Existing users are skipped; flavor and other application data
+are not seeded.
+
 ## Flavor monthly uniqueness migration
 
 The `flavor_monthly` table must contain at most one row per flavor, year, and

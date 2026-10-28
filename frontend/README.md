@@ -1,4 +1,16 @@
-# React + TypeScript + Vite
+UPDATE public.flavor_monthly AS fm
+SET quantity = 0,
+    cost = 0
+FROM public.flavors AS f
+WHERE f.id = fm."flavorId"
+  AND fm.year = 2026
+  AND fm.month = 10
+  AND (
+    (f.name = 'Avacado (100 ML)' AND f.category = '100 ML')
+    OR
+    (f.name = 'Avacado (500 ML)' AND f.category = '500 ML')
+  )
+RETURNING f.name, f.category, fm.year, fm.month, fm.quantity, fm.cost;# React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
@@ -43,20 +55,24 @@ export default defineConfig([
 ])
 ```
 
-## Flavor regression tests
+## Automated browser tests
 
-The automated flavor-tab suite exercises table rendering, category and month
-filters, sorting, pagination, bulk editing and validation, and flavor creation.
-API responses are mocked, so these tests do not write to a real database.
+The Playwright suite covers the public login flow, protected-route role checks,
+admin/manager/staff page smoke tests, desktop and mobile admin navigation, and
+the flavor-tab regression cases (filters, sorting, pagination, editing,
+validation, and flavor creation). API responses are mocked, so tests do not
+write to a real database.
 
-Install frontend dependencies, install Playwright's Chromium browser once, then
-run the suite:
+Install frontend dependencies and Playwright's Chromium browser once, then run
+the complete browser suite:
 
 ```sh
 npm install
 npx playwright install chromium
-npm run test:flavors
+npm run test:e2e
 ```
+
+Run only the detailed flavor regression suite with `npm run test:flavors`.
 
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
