@@ -190,6 +190,13 @@ export async function runStartupMigrations(
         await queryRunner.release();
       }
     }
+
+    if (flavorsTable[0]?.exists) {
+      await dataSource.query(`
+        ALTER TABLE flavors
+        ADD COLUMN IF NOT EXISTS "memberPrice" DOUBLE PRECISION;
+      `);
+    }
   } finally {
     if (dataSource.isInitialized) {
       await dataSource.destroy();

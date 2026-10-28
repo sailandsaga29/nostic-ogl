@@ -23,6 +23,9 @@ export class Flavor {
   @Column({ type: 'double precision', default: 0 })
   price!: number;
 
+  @Column({ type: 'double precision', nullable: true })
+  memberPrice?: number | null;
+
   @Column({ type: 'double precision', default: 0 })
   stock!: number;
 

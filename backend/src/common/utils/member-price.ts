@@ -14,3 +14,10 @@ export function getMemberPrice(staffPrice: number): number {
   const discounted = price * (1 - MEMBER_DISCOUNT_RATE);
   return roundMemberPrice(discounted);
 }
+
+export function getEffectiveMemberPrice(
+  staffPrice: number,
+  memberPrice?: number | null,
+): number {
+  return memberPrice == null ? getMemberPrice(staffPrice) : Number(memberPrice);
+}

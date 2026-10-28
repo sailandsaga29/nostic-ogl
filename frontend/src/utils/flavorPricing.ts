@@ -15,6 +15,13 @@ export function getMemberPrice(staffPrice: number): number {
   return roundMemberPrice(discounted);
 }
 
+export function getEffectiveMemberPrice(
+  staffPrice: number,
+  memberPrice?: number | null,
+): number {
+  return memberPrice == null ? getMemberPrice(staffPrice) : Number(memberPrice);
+}
+
 export function getInvestedAmount(
   quantity: number,
   staffPrice: number,

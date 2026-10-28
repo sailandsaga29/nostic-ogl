@@ -35,6 +35,16 @@ export class CreateFlavorDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @ApiProperty({
+    example: 72,
+    description: 'Optional explicit member price; omitted values use automatic pricing',
+    required: false,
+  })
+  memberPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   @ApiProperty({ example: 50, description: 'Current stock quantity', required: false })
   stock?: number;
 

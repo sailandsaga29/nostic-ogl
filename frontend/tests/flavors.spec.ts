@@ -7,6 +7,7 @@ type Flavor = {
   category: string;
   description: string;
   price: number;
+  memberPrice?: number | null;
   stock: number;
   quantity: number;
   carryForwarded: number;
@@ -113,7 +114,8 @@ async function installFlavorApiMocks(page: Page) {
           quantity,
           revenue:
             quantity *
-            getMockMemberPrice(Number(updated.price ?? flavor.price)),
+            (updated.memberPrice ??
+              getMockMemberPrice(Number(updated.price ?? flavor.price))),
         };
       });
       await route.fulfill({ json: { message: 'Flavors updated' } });
@@ -212,12 +214,17 @@ test('renders stock, pricing, investment, sales status and all known categories'
   }
 });
 
-test('imports stock and staff price from Excel and recalculates member price', async ({ page }) => {
+test('imports stock, staff price, and member price from Excel exactly', async ({ page }) => {
   const workbook = await makeStockWorkbook([
     ['Almond Joy', 'Popsicles', 0, 150, 135],
     ['Lemon Zest', '100 ML', 27, 120, 108],
   ]);
 
+  const updateRequest = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/flavors/bulk-update') &&
+      request.method() === 'POST',
+  );
   await page.locator('input[type="file"]').setInputFiles({
     name: 'flavor-stock.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -227,12 +234,26 @@ test('imports stock and staff price from Excel and recalculates member price', a
   await expect(page.getByRole('status')).toContainText(
     'Stock and staff prices updated for 2 flavors.',
   );
+  const payload = (await updateRequest).postDataJSON() as {
+    items: Array<Partial<Flavor> & { id: number }>;
+  };
+  expect(payload.items.find((item) => item.id === 1)).toMatchObject({
+    stock: 0,
+    price: 150,
+    memberPrice: 135,
+  });
+  expect(payload.items.find((item) => item.id === 12)).toMatchObject({
+    stock: 27,
+    price: 120,
+    memberPrice: 108,
+  });
   await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(4)).toHaveText('0');
   await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(5)).toHaveText('₹150');
-  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(6)).toHaveText('₹90');
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(6)).toHaveText('₹135');
   await page.getByRole('searchbox', { name: 'Search flavors' }).fill('Lemon Zest');
   await expect(flavorRow(page, 'Lemon Zest').getByRole('cell').nth(4)).toHaveText('27');
   await expect(flavorRow(page, 'Lemon Zest').getByRole('cell').nth(5)).toHaveText('₹120');
+  await expect(flavorRow(page, 'Lemon Zest').getByRole('cell').nth(6)).toHaveText('₹108');
 });
 
 test('downloads a latest stock workbook from the current flavor list', async ({ page }) => {
@@ -440,7 +461,7 @@ test('bulk table edit saves changes across editable fields', async ({ page }) =>
   await row.locator('input[type="number"]').nth(1).fill('150');
   await row.locator('input[type="checkbox"]').nth(0).uncheck();
   await row.locator('input[type="checkbox"]').nth(1).check();
-  await expect(row.getByRole('cell').nth(6)).toHaveText('₹90');
+  await expect(row.getByRole('cell').nth(6).locator('input')).toHaveValue('90');
 
   const updateRequest = page.waitForRequest(
     (request) =>
@@ -460,10 +481,34 @@ test('bulk table edit saves changes across editable fields', async ({ page }) =>
     isActive: false,
     isSeasonal: true,
   });
+  expect(updated?.memberPrice).toBeUndefined();
   await expect(page.getByText('Flavor list updated')).toBeVisible();
   await expect(flavorRow(page, 'Almond Joy Updated')).toContainText('Seasonal Specials');
   await expect(flavorRow(page, 'Almond Joy Updated')).toContainText('Disabled');
   await expect(page.getByRole('button', { name: 'Edit Table' })).toBeVisible();
+});
+
+test('bulk table edit saves and preserves a manually entered member price', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: 'Edit Table' }).click();
+  const row = firstFlavorRow(page);
+  await row.locator('input[type="number"]').nth(2).fill('77');
+
+  const updateRequest = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/flavors/bulk-update') &&
+      request.method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Save Table' }).click();
+  const payload = (await updateRequest).postDataJSON() as {
+    items: Array<Partial<Flavor> & { id: number }>;
+  };
+
+  expect(payload.items.find((item) => item.id === 1)?.memberPrice).toBe(77);
+  await expect(flavorRow(page, 'Almond Joy').getByRole('cell').nth(6)).toHaveText(
+    '₹77',
+  );
 });
 
 test('bulk table edit updates stock for multiple flavors in one save', async ({

@@ -16,7 +16,9 @@ import {
   type SortDirection,
 } from '../../utils/flavorListSort';
 import type { AdminPageProps } from '../../types/adminPage';
-import { getMemberPrice } from '../../utils/flavorPricing';
+import {
+  getEffectiveMemberPrice,
+} from '../../utils/flavorPricing';
 import { formatRupeeAmount } from '../../utils/partyOrderCalc';
 import {
   parseFlavorStockWorkbook,
@@ -79,6 +81,7 @@ const emptyNewFlavorForm = () => ({
   category: '',
   description: '',
   price: 0,
+  memberPrice: 0,
   stock: 0,
   image: '',
   isActive: true,
@@ -90,6 +93,10 @@ const flavorToForm = (flavor: FlavorItem) => ({
   category: flavor.category ?? '',
   description: flavor.description ?? '',
   price: Number(flavor.price ?? 0),
+  memberPrice: getEffectiveMemberPrice(
+    Number(flavor.price ?? 0),
+    flavor.memberPrice,
+  ),
   stock: Number(flavor.stock ?? 0),
   image: flavor.image ?? '',
   isActive: flavor.isActive !== false,
@@ -112,6 +119,7 @@ type FlavorItem = {
   carryForwarded: number;
   quantity: number;
   price: number;
+  memberPrice?: number | null;
   revenue: number;
   stock: number;
   minStock?: number;
@@ -185,6 +193,8 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
   const [bulkStockEditRequested, setBulkStockEditRequested] = useState<
     Record<number, boolean>
   >({});
+  const [bulkMemberPriceEditRequested, setBulkMemberPriceEditRequested] =
+    useState<Record<number, boolean>>({});
   const [isImportingStock, setIsImportingStock] = useState(false);
   const [isDownloadingStock, setIsDownloadingStock] = useState(false);
   const [excelImportErrors, setExcelImportErrors] = useState<string[]>([]);
@@ -374,7 +384,12 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
         minStock: item.minStock,
         price: item.price,
         revenue:
-          Number(item.stock ?? 0) * getMemberPrice(Number(item.price ?? 0)),
+          Number(item.stock ?? 0) *
+            getEffectiveMemberPrice(
+              Number(item.price ?? 0),
+              item.memberPrice,
+            ),
+        memberPrice: item.memberPrice,
         image: item.image,
         isActive: item.isActive,
         isSeasonal: item.isSeasonal,
@@ -694,6 +709,9 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
             category: item.category,
             description: item.description.trim(),
             price: Number(item.price),
+            ...(bulkMemberPriceEditRequested[item.id]
+              ? { memberPrice: Number(item.memberPrice) }
+              : {}),
             ...(bulkStockEditRequested[item.id]
               ? { stock: Number(item.stock) }
               : {}),
@@ -831,7 +849,10 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
           category: flavor.category ?? '',
           stock: Number(flavor.stock ?? 0),
           staffPrice: Number(flavor.price ?? 0),
-          memberPrice: getMemberPrice(Number(flavor.price ?? 0)),
+          memberPrice: getEffectiveMemberPrice(
+            Number(flavor.price ?? 0),
+            flavor.memberPrice,
+          ),
         })),
       );
       worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -927,6 +948,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
     ) as Record<number, FlavorForm>;
     setBulkEditDrafts(drafts);
     setBulkStockEditRequested({});
+    setBulkMemberPriceEditRequested({});
     setIsBulkEditing(true);
     setEditingFlavorId(null);
     setEditRowFeedback(null);
@@ -937,6 +959,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
     setIsBulkEditing(false);
     setBulkEditDrafts({});
     setBulkStockEditRequested({});
+    setBulkMemberPriceEditRequested({});
     setEditRowFeedback(null);
     setEditRowFeedbackId(null);
   };
@@ -1691,7 +1714,7 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
 
                   <th
                     scope="col"
-                    className="px-6 py-4 text-center text-sm font-medium text-gray-400"
+                    className="px-6 py-4 text-center text-sm font-medium text-gray-600"
                   >
                     Staff Price
                   </th>
@@ -1839,13 +1862,49 @@ export default function Flavors({ isActive = true }: AdminPageProps) {
                           </td>
 
                           <td className="px-6 py-4 text-center font-semibold text-teal-700">
-                            ₹{formatRupeeAmount(
-                              getMemberPrice(isBulkEditing ? draft.price : item.price),
+                            {isBulkEditing ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={
+                                  bulkMemberPriceEditRequested[item.id]
+                                    ? draft.memberPrice
+                                    : getEffectiveMemberPrice(
+                                        draft.price,
+                                        item.memberPrice,
+                                      )
+                                }
+                                onChange={(e) => {
+                                  updateBulkDraft(item.id, {
+                                    memberPrice: Number(e.target.value),
+                                  });
+                                  setBulkMemberPriceEditRequested((previous) => ({
+                                    ...previous,
+                                    [item.id]: true,
+                                  }));
+                                }}
+                                className="w-24 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm text-gray-700 outline-none focus:border-teal-400"
+                              />
+                            ) : (
+                              <>₹{formatRupeeAmount(
+                                getEffectiveMemberPrice(
+                                  item.price,
+                                  item.memberPrice,
+                                ),
+                              )}</>
                             )}
                           </td>
 
                           <td className="px-6 py-4 text-center font-semibold text-teal-600">
-                            ₹{formatRupeeAmount(item.revenue)}
+                            ₹{formatRupeeAmount(
+                              Number(item.quantity ?? 0) *
+                                getEffectiveMemberPrice(
+                                  isBulkEditing ? draft.price : item.price,
+                                  bulkMemberPriceEditRequested[item.id]
+                                    ? draft.memberPrice
+                                    : item.memberPrice,
+                                ),
+                            )}
                           </td>
 
                           <td className="px-6 py-4 text-center">

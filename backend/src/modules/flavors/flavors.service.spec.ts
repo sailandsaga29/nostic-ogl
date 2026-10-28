@@ -111,6 +111,40 @@ describe('FlavorsService stock adjustments', () => {
     expect(flavorsRepo.update).toHaveBeenCalledWith(1, { stock: 0 });
   });
 
+  it('preserves an explicitly supplied member price during a stock update', async () => {
+    const flavorWithOverride = {
+      ...monthlyRecord.flavor,
+      price: 125,
+      memberPrice: 71,
+    } as Flavor;
+    flavorsRepo.findOne.mockResolvedValue(flavorWithOverride);
+
+    await service.bulkUpdate([
+      { id: 1, price: 125, memberPrice: 71, stock: 5 },
+    ]);
+
+    expect(flavorsRepo.update).toHaveBeenCalledWith(1, {
+      price: 125,
+      memberPrice: 71,
+    });
+    expect(monthlyRecord.rate).toBe(71);
+    expect(monthlyRecord.cost).toBe(355);
+  });
+
+  it('keeps omitted member prices on the automatic pricing calculation', async () => {
+    const flavorWithoutOverride = {
+      ...monthlyRecord.flavor,
+      price: 125,
+    } as Flavor;
+    flavorsRepo.findOne.mockResolvedValue(flavorWithoutOverride);
+
+    await service.bulkUpdate([{ id: 1, price: 125, stock: 5 }]);
+
+    expect(flavorsRepo.update).toHaveBeenCalledWith(1, { price: 125 });
+    expect(monthlyRecord.rate).toBe(75);
+    expect(monthlyRecord.cost).toBe(375);
+  });
+
   it('updates monthly procurement when stock is edited through the single-flavor endpoint', async () => {
     monthlyRecord.quantity = 4;
     monthlyRecord.cost = 360;

@@ -11,7 +11,7 @@ import { FlavorMonthly } from './entities/flavor-monthly.entity';
 import { OrderStatus } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { parseId } from '../../common/utils/parse-id';
-import { getMemberPrice } from '../../common/utils/member-price';
+import { getEffectiveMemberPrice } from '../../common/utils/member-price';
 
 @Injectable()
 export class FlavorsService {
@@ -45,7 +45,10 @@ export class FlavorsService {
         now.getFullYear(),
         now.getMonth() + 1,
       );
-      const memberRate = getMemberPrice(Number(flavor.price ?? 0));
+      const memberRate = getEffectiveMemberPrice(
+        Number(flavor.price ?? 0),
+        flavor.memberPrice,
+      );
       monthly.quantity = Number(monthly.quantity ?? 0) + openingStock;
       monthly.rate = memberRate;
       monthly.cost = monthly.quantity * memberRate;
@@ -353,7 +356,10 @@ export class FlavorsService {
           month,
           carryForwarded,
           quantity: 0,
-          rate: getMemberPrice(Number(flavor.price ?? 0)),
+          rate: getEffectiveMemberPrice(
+            Number(flavor.price ?? 0),
+            flavor.memberPrice,
+          ),
           cost: 0,
           category: flavor.category,
         })
@@ -396,7 +402,10 @@ export class FlavorsService {
       0,
       Number(monthly.quantity ?? 0) + Number(change),
     );
-    const memberRate = getMemberPrice(Number(flavor.price ?? 0));
+    const memberRate = getEffectiveMemberPrice(
+      Number(flavor.price ?? 0),
+      flavor.memberPrice,
+    );
     monthly.rate = memberRate;
     monthly.cost = monthly.quantity * memberRate;
     monthly.category = flavor.category;
@@ -417,7 +426,10 @@ export class FlavorsService {
       now.getMonth() + 1,
     );
 
-    const memberRate = getMemberPrice(Number(flavor.price ?? 0));
+    const memberRate = getEffectiveMemberPrice(
+      Number(flavor.price ?? 0),
+      flavor.memberPrice,
+    );
     monthly.quantity = Math.max(0, Number(stock));
     monthly.rate = memberRate;
     monthly.cost = monthly.quantity * memberRate;
@@ -460,7 +472,10 @@ export class FlavorsService {
         (sum, record) =>
           sum +
           Number(record.quantity ?? 0) *
-            getMemberPrice(Number(record.flavor?.price ?? record.rate ?? 0)),
+            getEffectiveMemberPrice(
+              Number(record.flavor?.price ?? record.rate ?? 0),
+              record.flavor?.memberPrice,
+            ),
         0,
       ),
       units: records.reduce(
@@ -481,7 +496,10 @@ export class FlavorsService {
         (sum, record) =>
           sum +
           Number(record.quantity ?? 0) *
-            getMemberPrice(Number(record.flavor?.price ?? record.rate ?? 0)),
+            getEffectiveMemberPrice(
+              Number(record.flavor?.price ?? record.rate ?? 0),
+              record.flavor?.memberPrice,
+            ),
         0,
       ),
       units: records.reduce(
@@ -529,7 +547,10 @@ export class FlavorsService {
 
     return items.map((it) => {
       const staffPrice = Number(it.flavor.price ?? 0);
-      const memberRate = getMemberPrice(staffPrice);
+      const memberRate = getEffectiveMemberPrice(
+        staffPrice,
+        it.flavor.memberPrice,
+      );
       const quantity = Number(it.quantity || 0);
       const carryForwarded = carryForwardMap.get(it.flavorId) ?? 0;
 
@@ -543,6 +564,7 @@ export class FlavorsService {
         stock: it.flavor.stock,
         minStock: it.flavor.minStock,
         price: staffPrice,
+        memberPrice: it.flavor.memberPrice ?? null,
         revenue: quantity * memberRate,
         image: it.flavor.image,
         isActive: it.flavor.isActive,

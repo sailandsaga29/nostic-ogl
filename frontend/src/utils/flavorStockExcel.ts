@@ -17,6 +17,7 @@ export type FlavorStockUpdate = {
   id: number;
   stock: number;
   price: number;
+  memberPrice: number;
 };
 
 const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -169,6 +170,7 @@ export function resolveFlavorStockRows(
         id: matches[0].id,
         stock: row.stock,
         price: row.staffPrice,
+        memberPrice: row.memberPrice,
       });
     }
   }
